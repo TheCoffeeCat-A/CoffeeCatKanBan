@@ -46,6 +46,14 @@ class MemoryStore implements NoteStore {
     return result
   }
 
+  async convert(source: NoteSource, content: string, assertActive: () => void): Promise<string> {
+    return this.process(source.path, (current) => {
+      assertActive()
+      if (current !== source.content) throw new Error('Source changed')
+      return content
+    })
+  }
+
   async create(path: string, content: string, assertActive: () => void, source?: NoteSource): Promise<void> {
     await this.beforeCreate?.(path, content)
     assertActive()
@@ -71,6 +79,107 @@ class MemoryStore implements NoteStore {
     this.writes += 1
   }
 }
+
+test('incremental display rereads changed notes only, retries failures and forces full write checks', async () => {
+  const store = new MemoryStore()
+  let reads = 0
+  const read = store.read.bind(store)
+  store.read = async (path) => { reads += 1; return read(path) }
+  const repository = new TaskRepository(store, true)
+  await repository.scan()
+  assert.equal(reads, 2)
+  await repository.scan()
+  assert.equal(reads, 2)
+  store.files.set('Task.md', taskContent + 'Updated')
+  repository.invalidate('Task.md')
+  assert.ok((await repository.scan()).tasks[0]!.searchText!.includes('Updated'))
+  assert.equal(reads, 3)
+  store.unreadable.add('Task.md')
+  repository.invalidate('Task.md')
+  const failed = await repository.scan()
+  assert.equal(failed.tasks.length, 0)
+  assert.ok(failed.diagnostics.some((entry) => entry.path === 'Task.md'))
+  store.unreadable.clear()
+  assert.equal((await repository.scan()).tasks.length, 1)
+  const before = reads
+  await repository.scan(true)
+  assert.equal(reads - before, 2)
+  store.unreadable.add('Board.md')
+  await assert.rejects(repository.draft(taskId))
+  store.unreadable.clear()
+  store.files.delete('Task.md')
+  repository.invalidate('Task.md')
+  assert.equal((await repository.scan()).tasks.length, 0)
+})
+
+test('incremental display handles rename, duplicate identity and invalidation during reads', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store, true)
+  await repository.scan()
+  store.files.set('Renamed.md', taskContent)
+  store.files.delete('Task.md')
+  repository.invalidate('Task.md')
+  repository.invalidate('Renamed.md')
+  assert.equal((await repository.scan()).tasks[0]!.path, 'Renamed.md')
+  store.files.set('Duplicate.md', taskContent)
+  repository.invalidate('Duplicate.md')
+  assert.equal((await repository.scan()).tasks.length, 0)
+  store.files.delete('Duplicate.md')
+  repository.invalidate('Duplicate.md')
+  assert.equal((await repository.scan()).tasks.length, 1)
+  const read = store.read.bind(store)
+  let changed = false
+  store.read = async (path) => {
+    const content = await read(path)
+    if (path === 'Renamed.md' && !changed) {
+      changed = true
+      store.files.set(path, content + 'Latest')
+      repository.invalidate(path)
+    }
+    return content
+  }
+  repository.invalidate('Renamed.md')
+  await repository.scan()
+  assert.ok((await repository.scan()).tasks[0]!.searchText!.includes('Latest'))
+})
+
+test('conversion refuses data diagnostics both before and after preview', async () => {
+  const store = new MemoryStore()
+  store.files.set('Ordinary.md', 'Body')
+  const repository = new TaskRepository(store)
+  const preview = await repository.previewConversion('Ordinary.md', boardId, 'todo')
+  store.files.set('Duplicate.md', taskContent)
+  await assert.rejects(repository.previewConversion('Ordinary.md', boardId, 'todo'), /diagnostics/)
+  await assert.rejects(repository.convertNote(preview), /diagnostics/)
+  assert.equal(store.writes, 0)
+  assert.equal(store.files.get('Ordinary.md'), 'Body')
+})
+
+test('ordinary conversion preserves path and rejects stale previews and final races', async () => {
+  for (const change of ['none', 'source', 'board', 'final', 'disposed', 'failure']) {
+    const store = new MemoryStore()
+    store.files.set('Ordinary.md', '# Body\n')
+    const repository = new TaskRepository(store)
+    const preview = await repository.previewConversion('Ordinary.md', boardId, 'todo')
+    assert.equal(store.writes, 0)
+    if (change === 'source') store.files.set('Ordinary.md', 'Edited')
+    if (change === 'board') store.files.set('Board.md', boardContent.replace('Todo', 'Changed'))
+    if (change === 'final') store.beforeProcess = async () => { store.files.set('Ordinary.md', 'Edited') }
+    if (change === 'disposed') store.beforeProcess = async () => { repository.dispose() }
+    if (change === 'failure') store.fail = true
+    if (change === 'none') {
+      const task = await repository.convertNote(preview)
+      assert.equal(task.path, 'Ordinary.md')
+      assert.equal(store.files.size, 3)
+      assert.ok(store.files.get(task.path)!.endsWith('# Body\n'))
+      assert.equal(repository.hasUndo(boardId), false)
+      await assert.rejects(repository.convertNote(preview))
+    } else {
+      await assert.rejects(repository.convertNote(preview))
+      assert.equal(store.writes, 0)
+    }
+  }
+})
 
 test('task copies stay in the source folder with unique names, IDs and no new undo', async () => {
   const store = new MemoryStore()

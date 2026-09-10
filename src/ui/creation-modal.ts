@@ -1,6 +1,7 @@
 import { Modal, Notice, Setting, type App } from 'obsidian'
 import type { Board } from '../domain/model'
 import type { KanbanService } from '../contracts'
+import { defaultSettings, type KanbanSettings } from '../domain/settings'
 
 export class CreationModal extends Modal {
   private title = ''
@@ -15,8 +16,10 @@ export class CreationModal extends Modal {
 
   constructor(app: App, private readonly repository: Pick<KanbanService, 'createBoard' | 'createTask'>,
     private readonly created: (boardId: string) => void,
-    private readonly board?: Board, columnId?: string, due = '') {
+    private readonly board?: Board, columnId?: string, due = '', settings: KanbanSettings = defaultSettings()) {
     super(app)
+    this.folder = settings.boardFolder
+    this.taskFolder = settings.taskFolder
     this.columnId = columnId ?? board?.defaultColumn ?? ''
     this.due = due
   }
@@ -44,7 +47,7 @@ export class CreationModal extends Modal {
       })
     } else {
       new Setting(fields).setName('看板文件夹').setDesc('相对于库根目录, 留空使用根目录').addText((input) => {
-        input.onChange((value) => { this.folder = value; this.dirty = true })
+        input.setValue(this.folder).onChange((value) => { this.folder = value; this.dirty = true })
       })
       new Setting(fields).setName('新任务文件夹').setDesc('相对于库根目录').addText((input) => {
         input.setValue(this.taskFolder).onChange((value) => { this.taskFolder = value; this.dirty = true })

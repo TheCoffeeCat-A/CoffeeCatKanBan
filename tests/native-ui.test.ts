@@ -184,7 +184,7 @@ function loadModal(filename: string, exportName: string): ModalConstructor {
   const result = { exports: {} as Record<string, ModalConstructor> }
   const nativeRequire = createRequire(resolve('package.json'))
   const dependency = (name: string): unknown => name === 'obsidian'
-    ? { Modal: ModalStub, ItemView: ViewStub, Setting: SettingStub, Menu: MenuStub, Notice: class {}, setIcon: () => undefined,
+    ? { Modal: ModalStub, ItemView: ViewStub, PluginSettingTab: class { containerEl = new ElementStub() }, Setting: SettingStub, Menu: MenuStub, Notice: class {}, setIcon: () => undefined,
       Component: ComponentStub, FuzzySuggestModal: PickerStub, TFile: ReferenceFileStub,
       parseLinktext: (link: string) => {
         const index = link.indexOf('#')
@@ -197,6 +197,10 @@ function loadModal(filename: string, exportName: string): ModalConstructor {
 }
 
 const Creation = loadModal('creation-modal.ts', 'CreationModal')
+const Conversion = loadModal('conversion-modal.ts', 'ConversionModal')
+const SettingsTab = loadModal('settings-tab.ts', 'KanbanSettingsTab') as unknown as new (...args: unknown[]) => {
+  containerEl: ElementStub; display(): void; hide(): void
+}
 const OperationReport = loadModal('operation-report-modal.ts', 'OperationReportModal')
 const OrderRepair = loadModal('order-repair-modal.ts', 'OrderRepairModal')
 const Columns = loadModal('columns-modal.ts', 'ColumnsModal')
@@ -215,6 +219,100 @@ const board: Board = {
   defaultColumn: 'todo', doneColumn: 'done',
   columns: [{ id: 'todo', title: 'Todo' }, { id: 'doing', title: 'Doing' }, { id: 'done', title: 'Done' }],
 }
+
+test('settings save failures retain drafts, block duplicates and ignore hidden controls', async () => {
+  let attempts = 0
+  const current = { defaultView: 'board', boardFolder: '', taskFolder: 'Tasks', showArchived: false }
+  const tab = new SettingsTab({}, {}, () => current, async (settings: typeof current) => {
+    attempts += 1
+    if (attempts === 1) throw new Error('Save failed')
+    Object.assign(current, settings)
+  })
+  tab.display()
+  const folder = tab.containerEl.allSettings().find((entry) => entry.name === '新建看板默认目录')!.controls[0]!
+  folder.change('Boards')
+  const save = tab.containerEl.allSettings().flatMap((entry) => entry.controls).find((entry) => entry.label === '保存')!
+  save.action()
+  save.action()
+  await nextTurn()
+  assert.equal(attempts, 1)
+  assert.equal(current.boardFolder, '')
+  assert.ok(tab.containerEl.descendants().some((entry) => entry.textContent === 'Save failed'))
+  save.action()
+  await nextTurn()
+  assert.equal(current.boardFolder, 'Boards')
+  tab.hide()
+  save.action()
+  assert.equal(attempts, 2)
+})
+
+test('closing settings during a save does not redraw a hidden page', async () => {
+  let finish!: () => void
+  const tab = new SettingsTab({}, {}, () => ({ defaultView: 'board', boardFolder: '', taskFolder: 'Tasks', showArchived: false }),
+    () => new Promise<void>((resolve) => { finish = resolve }))
+  tab.display()
+  const original = tab.containerEl.children[0]
+  tab.containerEl.allSettings().flatMap((entry) => entry.controls).find((entry) => entry.label === '保存')!.action()
+  tab.hide()
+  finish()
+  await nextTurn()
+  assert.equal(tab.containerEl.children[0], original)
+  assert.ok(!tab.containerEl.descendants().some((entry) => entry.textContent === '已保存'))
+})
+
+test('global defaults apply to new views and board drafts but restored state wins', async () => {
+  const defaults = { defaultView: 'calendar', boardFolder: 'Boards', taskFolder: 'Work/Tasks', showArchived: true }
+  const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, {
+    scan: async () => ({ boards: [board], tasks: [], diagnostics: [] }), hasUndo: () => false,
+  }, () => undefined, () => defaults)
+  assert.equal(view.getState().mode, 'calendar')
+  assert.equal(view.getState().showArchived, true)
+  await view.setState({ mode: 'data', showArchived: false }, {})
+  assert.equal(view.getState().mode, 'data')
+  assert.equal(view.getState().showArchived, false)
+  const modal = new Creation({}, {}, () => undefined, undefined, undefined, '', defaults)
+  modal.open()
+  assert.equal(row(modal, '看板文件夹').controls[0]!.value, 'Boards')
+  assert.equal(row(modal, '新任务文件夹').controls[0]!.value, 'Work/Tasks')
+})
+
+test('conversion requires preview, prevents duplicate submissions and rejects closed controls', async () => {
+  let previews = 0
+  let writes = 0
+  let finish!: () => void
+  const task = taskFixture('converted')
+  const service = {
+    previewConversion: async () => { previews += 1; return { task, content: createNote({ kanban_kind: 'task' }) } },
+    convertNote: async () => { writes += 1; await new Promise<void>((resolve) => { finish = resolve }); return task },
+  }
+  let completed = 0
+  const modal = new Conversion({}, 'Existing.md', [board], service, () => { completed += 1 })
+  modal.open()
+  const preview = button(modal, '预览')
+  preview.action()
+  preview.action()
+  await nextTurn()
+  assert.equal(previews, 1)
+  assert.equal(writes, 0)
+  const confirm = button(modal, '确认加入')
+  confirm.action()
+  confirm.action()
+  modal.close()
+  assert.equal(modal.closed, false)
+  assert.equal(writes, 1)
+  finish()
+  await nextTurn()
+  assert.equal(completed, 1)
+  assert.equal(modal.closed, true)
+  confirm.action()
+  assert.equal(writes, 1)
+  const cancelled = new Conversion({}, 'Existing.md', [board], service, () => undefined)
+  cancelled.open()
+  const stale = button(cancelled, '预览')
+  button(cancelled, '取消').action()
+  stale.action()
+  assert.equal(previews, 1)
+})
 
 test('note linking refreshes body preview and closed pickers cannot write', async () => {
   const draft = { task: taskFixture('linked'), board, content: '---\ncustom: value\n---\nOriginal body' }

@@ -1,4 +1,5 @@
-import type { KanbanService, NoteStore, TaskDraft } from '../contracts'
+import type { ConversionDraft, KanbanService, NoteStore, TaskDraft } from '../contracts'
+import { convertNote } from '../domain/conversion'
 import { buildCatalogue, type Catalogue, type Diagnostic, type NoteSource } from '../domain/catalogue'
 import { changeColumns, type ColumnAction } from '../domain/columns'
 import { applyChange, prepareChange, reverseChange, type TaskChange } from '../domain/changes'
@@ -17,11 +18,87 @@ export class TaskRepository implements KanbanService {
   private notes: readonly NoteSource[] = []
   private catalogue: Catalogue = buildCatalogue([])
   private readonly history = new Map<string, readonly TaskChange[]>()
+  private readonly displayNotes = new Map<string, NoteSource>()
+  private readonly displayParsed = new WeakMap<NoteSource, ReturnType<typeof parseNote>>()
+  private readonly dirtyPaths = new Set<string>()
+  private displayRevision = 0
 
-  constructor(private readonly store: NoteStore) {}
+  constructor(private readonly store: NoteStore, private readonly incremental = false) {}
 
-  scan(): Promise<Catalogue> {
-    return this.enqueue(() => this.load('display'))
+  scan(force = false): Promise<Catalogue> {
+    if (force) this.invalidate()
+    return this.enqueue(() => this.incremental ? this.loadDisplay() : this.load('display'))
+  }
+
+  invalidate(path?: string): void {
+    this.displayRevision += 1
+    if (path === undefined) { this.displayNotes.clear(); this.dirtyPaths.clear() }
+    else this.dirtyPaths.add(path)
+  }
+
+  private async loadDisplay(): Promise<Catalogue> {
+    this.assertActive()
+    const revision = this.displayRevision
+    const paths = this.store.listPaths()
+    const present = new Set(paths)
+    for (const path of this.displayNotes.keys()) if (!present.has(path)) this.displayNotes.delete(path)
+    const notes: NoteSource[] = []
+    const errors: Diagnostic[] = []
+    for (const path of paths) {
+      let note = this.dirtyPaths.has(path) ? undefined : this.displayNotes.get(path)
+      if (!note) {
+        try {
+          note = { path, content: await this.store.read(path) }
+          if (revision === this.displayRevision) this.displayNotes.set(path, note)
+        } catch {
+          this.displayNotes.delete(path)
+          errors.push({ path, message: 'Note could not be read; restore access and refresh' })
+        }
+      }
+      this.assertActive()
+      if (note) notes.push(note)
+    }
+    if (revision === this.displayRevision) this.dirtyPaths.clear()
+    const catalogue = buildCatalogue(notes, this.displayParsed)
+    return Object.freeze({ ...catalogue, diagnostics: Object.freeze([...catalogue.diagnostics, ...errors]) })
+  }
+
+  previewConversion(path: string, boardId: string, columnId: string): Promise<ConversionDraft> {
+    return this.enqueue(async () => {
+      await this.load()
+      if (this.catalogue.diagnostics.length) throw new KanbanError('CONFLICT', 'Resolve data diagnostics before converting notes')
+      const source = this.notes.find((note) => note.path === path)
+      const board = this.catalogue.boards.find((entry) => entry.id === boardId)
+      if (!source || !board) throw new KanbanError('NOT_FOUND', 'Note or board unavailable')
+      const title = path.split('/').at(-1)!.replace(/\.md$/i, '')
+      const content = convertNote(source.content, path, { boardId, columnId, title }, crypto.randomUUID(), board, this.catalogue.tasks)
+      const task = readTask(propertiesOf(content), path)
+      return Object.freeze({ source, board, columnId, task, content })
+    })
+  }
+
+  convertNote(expected: ConversionDraft): Promise<Task> {
+    return this.enqueue(async () => {
+      await this.load()
+      if (this.catalogue.diagnostics.length) throw new KanbanError('CONFLICT', 'Resolve data diagnostics before converting notes')
+      const source = this.notes.find((note) => note.path === expected.source.path)
+      const board = this.catalogue.boards.find((entry) => entry.id === expected.board.id)
+      if (!source || !board || source.content !== expected.source.content || JSON.stringify(board) !== JSON.stringify(expected.board)) {
+        throw new KanbanError('CONFLICT', 'Note or board changed; reopen the conversion preview')
+      }
+      const title = source.path.split('/').at(-1)!.replace(/\.md$/i, '')
+      const content = convertNote(source.content, source.path, { boardId: board.id, columnId: expected.columnId, title }, expected.task.id, board, this.catalogue.tasks)
+      if (content !== expected.content || this.catalogue.tasks.some((task) => task.id === expected.task.id)
+        || this.catalogue.boards.some((entry) => entry.id === expected.task.id)) {
+        throw new KanbanError('CONFLICT', 'Conversion preview changed; review again')
+      }
+      if (!this.store.convert) throw new KanbanError('NOT_FOUND', 'Note conversion unavailable')
+      const saved = await this.store.convert(source, content, () => this.assertActive())
+      this.assertActive()
+      this.notes = this.notes.map((note) => note.path === source.path ? { path: note.path, content: saved } : note)
+      this.catalogue = buildCatalogue(this.notes)
+      return this.locate(expected.task.id).task
+    })
   }
 
   previewOrderRepair(boardId: string, columnId: string): Promise<OrderRepairPlan> {
@@ -301,6 +378,7 @@ export class TaskRepository implements KanbanService {
   dispose(): void {
     this.active = false
     this.history.clear()
+    this.invalidate()
   }
 
   private assertActive(): void {
@@ -339,6 +417,7 @@ export class TaskRepository implements KanbanService {
 
   private async load(mode: 'strict' | 'display' = 'strict'): Promise<Catalogue> {
     this.assertActive()
+    this.invalidate()
     const notes: NoteSource[] = []
     const readErrors: Diagnostic[] = []
     for (const path of this.store.listPaths()) {

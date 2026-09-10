@@ -17,13 +17,14 @@ export interface Catalogue {
   readonly diagnostics: readonly Diagnostic[]
 }
 
-export function buildCatalogue(notes: readonly NoteSource[]): Catalogue {
+export function buildCatalogue(notes: readonly NoteSource[], parsedNotes?: WeakMap<NoteSource, ReturnType<typeof parseNote>>): Catalogue {
   const identities = new Map<string, string[]>()
   const candidates: (Board | Task)[] = []
   const diagnostics: Diagnostic[] = []
   for (const note of notes) {
     try {
-      const parsed = parseNote(note.content)
+      const parsed = parsedNotes?.has(note) ? parsedNotes.get(note)! : parseNote(note.content)
+      parsedNotes?.set(note, parsed)
       if (!parsed || !Object.hasOwn(parsed.properties, 'kanban_kind')) continue
       const properties = parsed.properties
       if (isUuid(properties.kanban_id)) {

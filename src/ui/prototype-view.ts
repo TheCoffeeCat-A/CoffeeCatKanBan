@@ -20,6 +20,7 @@ import type { TaskInteraction } from './task-menu'
 import type { TaskSelection } from './task-selection'
 import { TaskPropertyModal } from './task-modal'
 import { TaskFileModal } from './task-file-modal'
+import { defaultSettings, type KanbanSettings } from '../domain/settings'
 
 export const PROTOTYPE_VIEW = 'coffeecat-kanban-prototype'
 
@@ -42,8 +43,10 @@ export class PrototypeView extends ItemView {
   private readonly selectedTasks = new Map<string, Task>()
 
   constructor(leaf: WorkspaceLeaf, private readonly repository: KanbanService,
-    private readonly changed: () => void) {
+    private readonly changed: () => void, private readonly settings: () => KanbanSettings = defaultSettings) {
     super(leaf)
+    this.mode = settings().defaultView
+    this.showArchived = settings().showArchived
   }
 
   override getViewType(): string { return PROTOTYPE_VIEW }
@@ -90,10 +93,10 @@ export class PrototypeView extends ItemView {
     this.contentEl.empty()
   }
 
-  refresh(): void {
+  refresh(force = false): void {
     if (this.closed) return
     const generation = ++this.generation
-    void this.repository.scan().then((catalogue) => {
+    void this.repository.scan(force).then((catalogue) => {
       if (this.closed || generation !== this.generation) return
       this.catalogue = catalogue
       if (!this.boardId && catalogue.boards.length === 1) {
@@ -109,7 +112,7 @@ export class PrototypeView extends ItemView {
       this.renderGeneration += 1
       this.contentEl.empty()
       this.contentEl.createEl('p', { cls: 'cckb-error', text: reason instanceof Error ? reason.message : '读取失败' })
-      iconButton(this.contentEl, 'refresh-cw', '重新读取', () => this.refresh())
+      iconButton(this.contentEl, 'refresh-cw', '重新读取', () => this.refresh(true))
     })
   }
 
@@ -145,7 +148,7 @@ export class PrototypeView extends ItemView {
         this.saveState()
       }
       this.changed()
-    }).open()
+    }, undefined, undefined, '', this.settings()).open()
   }
 
   private openNote(path: string): void {
@@ -237,7 +240,7 @@ export class PrototypeView extends ItemView {
       this.render(catalogue)
     })
     iconButton(header, 'folder-plus', '新建看板', () => this.createBoard())
-    iconButton(header, 'refresh-cw', '重新读取', () => this.refresh())
+    iconButton(header, 'refresh-cw', '重新读取', () => this.refresh(true))
     const board = catalogue.boards.find((entry) => entry.id === this.boardId)
     if (board) {
       iconButton(header, 'file-text', '打开看板笔记', () => this.openNote(board.path))

@@ -63,6 +63,29 @@ function fixture() {
   return { host, store, file, files, contents, leaves, trashed, created }
 }
 
+test('conversion guards unsaved editors and final content changes', async () => {
+  for (const change of ['none', 'unsaved', 'final', 'replacement', 'disposed']) {
+    const current = fixture()
+    let active = true
+    if (change === 'unsaved') current.leaves.push({ view: new MarkdownViewStub(current.file, { getValue: () => 'Unsaved' }) })
+    const process = current.host.vault.process
+    current.host.vault.process = async (file, update) => {
+      if (change === 'final') current.contents.set(file.path, 'Changed')
+      if (change === 'replacement') current.files.set(file.path, new FileStub(file.path))
+      if (change === 'disposed') active = false
+      return process(file, update)
+    }
+    const operation = current.store.convert!({ path: 'Task.md', content: '# Saved body\n' }, '# Converted\n', () => { if (!active) throw new Error('Inactive') })
+    if (change === 'none') assert.equal(await operation, '# Converted\n')
+    else {
+      await assert.rejects(operation)
+      assert.notEqual(current.contents.get('Task.md'), '# Converted\n')
+    }
+    assert.equal(current.created.length, 0)
+    assert.equal(current.trashed.length, 0)
+  }
+})
+
 test('host deletion delegates only the reviewed Markdown file to preferred trash', async () => {
   const current = fixture()
   current.files.set('Other.md', new FileStub('Other.md'))

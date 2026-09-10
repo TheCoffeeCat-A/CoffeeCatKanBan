@@ -18,6 +18,23 @@ export class ObsidianNoteStore implements NoteStore {
     return this.app.vault.process(this.file(path), update)
   }
 
+  async convert(source: NoteSource, content: string, assertActive: () => void): Promise<string> {
+    const file = await this.checkedFile(source.path, source.content, assertActive)
+    return this.app.vault.process(file, (current) => {
+      assertActive()
+      if (current !== source.content || file.path !== source.path || this.file(source.path) !== file) {
+        throw new KanbanError('CONFLICT', 'Note changed; reopen the conversion preview')
+      }
+      for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+        const view = leaf.view
+        if (view instanceof MarkdownView && view.file === file && view.editor.getValue() !== current) {
+          throw new KanbanError('CONFLICT', 'Save the native editor changes before converting')
+        }
+      }
+      return content
+    })
+  }
+
   async appendLink(source: NoteSource, targetPath: string, assertActive: () => void): Promise<string> {
     validateNotePath(targetPath)
     const target = this.file(targetPath)
