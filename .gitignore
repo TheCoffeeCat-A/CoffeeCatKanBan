@@ -1,5 +1,28 @@
+# Dependencies
 node_modules/
-.cache/
-.test-vault/
-main.js
-main.js.map
+
+# Local editor configuration
+/.vscode/
+
+# Local caches and test vault
+/.cache/
+/.test-vault/
+
+# Generated Obsidian plugin bundle
+/main.js
+/main.js.map
+*.tsbuildinfo
+
+# Local environment files (keep sanitized examples)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# npm debug logs
+npm-debug.log*
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -119,7 +119,9 @@ class ModalStub {
   titleEl = new ElementStub()
   closed = false
   constructor(readonly app: unknown) {
-    Object.assign(app as object, { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } })
+    const host = app as Record<string, unknown>
+    host.vault ??= { getAbstractFileByPath: () => null, getMarkdownFiles: () => [], on: () => ({}) }
+    host.metadataCache ??= { on: () => ({}) }
   }
   open(): void { ModalStub.last = this; this.onOpen() }
   close(): void { this.closed = true; this.onClose() }
@@ -132,8 +134,14 @@ class PickerStub extends ModalStub {
 }
 
 class ComponentStub {
+  private events: { off?: () => void }[] = []
   load(): void {}
-  unload(): void {}
+  registerEvent(event: { off?: () => void }): void { this.events.push(event) }
+  unload(): void { for (const event of this.events) event.off?.(); this.events = [] }
+}
+
+class ReferenceFileStub {
+  constructor(readonly path: string) {}
 }
 
 class ViewStub {
@@ -177,8 +185,11 @@ function loadModal(filename: string, exportName: string): ModalConstructor {
   const nativeRequire = createRequire(resolve('package.json'))
   const dependency = (name: string): unknown => name === 'obsidian'
     ? { Modal: ModalStub, ItemView: ViewStub, Setting: SettingStub, Menu: MenuStub, Notice: class {}, setIcon: () => undefined,
-      Component: ComponentStub, FuzzySuggestModal: PickerStub, TFile: class {},
-      parseLinktext: (link: string) => ({ path: link, subpath: '' }),
+      Component: ComponentStub, FuzzySuggestModal: PickerStub, TFile: ReferenceFileStub,
+      parseLinktext: (link: string) => {
+        const index = link.indexOf('#')
+        return index < 0 ? { path: link, subpath: '' } : { path: link.slice(0, index), subpath: link.slice(index) }
+      },
       MarkdownRenderer: { render: async (_app: unknown, body: string, container: ElementStub) => { container.setText(body) } } }
     : nativeRequire(name)
   new Function('module', 'exports', 'require', output)(result, result.exports, dependency)
@@ -764,4 +775,58 @@ test('expanded column targets still reject dragging in non-manual sort mode', as
   assert.equal(hover.prevented, false)
   assert.equal(actions.length, 0)
   await view.onClose()
+})
+
+test('reference cache events refresh targets without replacing drafts and unload all listeners', async () => {
+  const task = taskFixture('references')
+  const source = new ReferenceFileStub(task.path)
+  const target = new ReferenceFileStub('Folder/同名 笔记.md')
+  const attachment = new ReferenceFileStub('Attachments/image.png')
+  const listeners = new Map<string, Set<() => void>>()
+  const on = (name: string, callback: () => void) => {
+    const callbacks = listeners.get(name) ?? new Set<() => void>()
+    callbacks.add(callback)
+    listeners.set(name, callbacks)
+    return { off: () => callbacks.delete(callback) }
+  }
+  const emit = (name: string) => { for (const callback of listeners.get(name) ?? []) callback() }
+  let cache: { links: { link: string }[]; embeds: { link: string }[] } | null = null
+  let targetExists = true
+  const opened: string[][] = []
+  const app = {
+    vault: { getAbstractFileByPath: () => source, getMarkdownFiles: () => [source, target], on },
+    metadataCache: { on, getFileCache: () => cache,
+      getFirstLinkpathDest: (path: string, sourcePath: string) => {
+        assert.equal(sourcePath, task.path)
+        if (path === 'image.png') return attachment
+        return targetExists && ['同名 笔记', 'Folder/同名 笔记.md'].includes(path) ? target : null
+      } },
+    workspace: { openLinkText: async (...args: string[]) => { opened.push(args) } },
+  }
+  const modal = new Properties(app, { task, board, content: '---\ncustom: value\n---\nBody' }, {}, () => undefined)
+  modal.open()
+  const title = row(modal, '标题').controls[0]!
+  title.change('Unsaved title')
+  const list = modal.contentEl.querySelector('.cckb-note-references')!
+  assert.ok(list.descendants().some((element) => element.textContent === '链接缓存尚未就绪'))
+  cache = { links: [{ link: '同名 笔记#Heading' }, { link: 'Folder/同名 笔记.md#Heading' },
+    { link: '#^block' }, { link: 'Missing' }], embeds: [{ link: 'image.png' }] }
+  emit('changed')
+  const buttons = list.descendants().filter((element) => element.tagName === 'button')
+  assert.equal(buttons.length, 3)
+  assert.ok(list.descendants().some((element) => element.textContent === '失效链接: Missing'))
+  assert.equal(row(modal, '标题').controls[0], title)
+  for (const button of buttons) button.listeners.get('click')!()
+  await nextTurn()
+  assert.deepEqual(opened, [['同名 笔记#Heading', task.path, 'tab'], ['#^block', task.path, 'tab'], ['image.png', task.path, 'tab']])
+  targetExists = false
+  emit('resolved')
+  assert.ok(list.descendants().some((element) => element.textContent === '失效链接: 同名 笔记#Heading'))
+  buttons[0]!.listeners.get('click')!()
+  assert.equal(opened.length, 3)
+  title.change(task.title)
+  modal.close()
+  assert.ok([...listeners.values()].every((callbacks) => callbacks.size === 0))
+  emit('changed')
+  assert.equal(modal.contentEl.children.length, 0)
 })
