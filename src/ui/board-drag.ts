@@ -6,6 +6,7 @@ export class BoardDrag {
   private sourceElement: HTMLElement | undefined
   private target: HTMLElement | undefined
   private active = true
+  private readonly anchors = new WeakMap<HTMLElement, Task>()
 
   constructor(private readonly boardId: string, private readonly enabled: boolean,
     private readonly available: () => boolean, private readonly act: (task: Task, action: TaskAction) => void) {}
@@ -28,6 +29,7 @@ export class BoardDrag {
   }
 
   bindTarget(element: HTMLElement, columnId: string, anchor?: Task): void {
+    if (anchor) this.anchors.set(element, anchor)
     element.addEventListener('dragover', (event) => {
       if (this.active && this.source && anchor?.id === this.source.id) {
         event.preventDefault()
@@ -40,8 +42,9 @@ export class BoardDrag {
       event.stopPropagation()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
       this.clearTarget()
-      this.target = element
-      element.addClass(anchor ? this.side(event, element) === 'before' ? 'cckb-drop-before' : 'cckb-drop-after' : 'cckb-drop-column')
+      const placement = this.placement(event, element, anchor)
+      this.target = placement.element
+      this.target.addClass(placement.anchor ? placement.side === 'before' ? 'cckb-drop-before' : 'cckb-drop-after' : 'cckb-drop-column')
     })
     element.addEventListener('drop', (event) => {
       if (this.active && this.source && anchor?.id === this.source.id) {
@@ -54,8 +57,9 @@ export class BoardDrag {
       event.preventDefault()
       event.stopPropagation()
       const source = this.source!
+      const placement = this.placement(event, element, anchor)
       const action: TaskAction = { kind: 'move', columnId,
-        ...(anchor ? { anchor, side: this.side(event, element) } : {}) }
+        ...(placement.anchor ? { anchor: placement.anchor, side: placement.side! } : {}) }
       this.clear()
       this.act(source, action)
     })
@@ -69,6 +73,19 @@ export class BoardDrag {
   private canDrop(anchor?: Task): boolean {
     return this.active && this.enabled && this.available() && Boolean(this.source)
       && (!anchor || (anchor.boardId === this.boardId && anchor.id !== this.source!.id))
+  }
+
+  private placement(event: DragEvent, element: HTMLElement, anchor?: Task): {
+    element: HTMLElement; anchor?: Task; side?: 'before' | 'after'
+  } {
+    if (anchor) return { element, anchor, side: this.side(event, element) }
+    for (const card of element.querySelectorAll<HTMLElement>('[data-task-id]')) {
+      const task = this.anchors.get(card)
+      if (task && this.canDrop(task) && this.side(event, card) === 'before') {
+        return { element: card, anchor: task, side: 'before' }
+      }
+    }
+    return { element }
   }
 
   private side(event: DragEvent, element: HTMLElement): 'before' | 'after' {

@@ -585,11 +585,11 @@ function dragEvent(clientY = 10) {
   }
 }
 
-async function actionView() {
+async function actionView(additionalTasks: Task[] = []) {
   const first = taskFixture('first')
   const second = { ...taskFixture('second', 'doing'), searchText: 'body-only needle' }
   const actions: { task: Task; action: TaskAction }[] = []
-  const catalogue = { boards: [board], tasks: [first, second], diagnostics: [] }
+  const catalogue = { boards: [board], tasks: [first, second, ...additionalTasks], diagnostics: [] }
   const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, {
     scan: async () => catalogue, hasUndo: () => false,
     actOnTask: async (task: Task, action: TaskAction) => { actions.push({ task, action }) },
@@ -735,6 +735,41 @@ test('query state round-trips in a new view without issuing task actions', async
   assert.deepEqual(next.view.getState().query, state.query)
   assert.deepEqual(next.view.contentEl.descendants().filter((element) => element.tagName === 'article').map((element) => element.dataset.taskId), ['second'])
   assert.equal(next.actions.length, 0)
+})
+
+test('dropping between cards targets the gap instead of the column top in the same or another column', async () => {
+  for (const columnId of ['todo', 'doing']) {
+    const upper = { ...taskFixture('upper', columnId), order: 'a1' }
+    const lower = { ...taskFixture('lower', columnId), order: 'a2' }
+    const { view, actions } = await actionView([upper, lower])
+    const elements = view.contentEl.descendants()
+    const source = elements.find((element) => element.dataset.taskId === 'first')!
+    const handle = source.descendants().find((element) => element.draggable)!
+    const column = elements.find((element) => element.attributes.get('data-column-id') === columnId)!
+    const upperCard = elements.find((element) => element.dataset.taskId === upper.id)!
+    const lowerCard = elements.find((element) => element.dataset.taskId === lower.id)!
+    upperCard.getBoundingClientRect = () => ({ top: 160, height: 160 })
+    lowerCard.getBoundingClientRect = () => ({ top: 344, height: 100 })
+    handle.listeners.get('dragstart')!(dragEvent())
+    upperCard.listeners.get('dragover')!(dragEvent(300))
+    assert.ok(upperCard.className.includes('cckb-drop-after'))
+    const hover = dragEvent(332)
+    column.listeners.get('dragover')!(hover)
+    assert.equal(hover.prevented, true)
+    assert.equal(hover.stopped, true)
+    assert.equal(hover.dataTransfer.dropEffect, 'move')
+    assert.ok(lowerCard.className.includes('cckb-drop-before'))
+    assert.ok(!upperCard.className.includes('cckb-drop-after'))
+    assert.ok(!column.className.includes('cckb-drop-column'))
+    column.listeners.get('drop')!(dragEvent(332))
+    await nextTurn()
+    assert.equal(actions.length, 1)
+    assert.equal(actions[0]!.task.id, 'first')
+    assert.deepEqual(actions[0]!.action, { kind: 'move', columnId, anchor: lower, side: 'before' })
+    assert.ok(!lowerCard.className.includes('cckb-drop-before'))
+    assert.ok(!source.className.includes('cckb-dragging'))
+    await view.onClose()
+  }
 })
 
 test('dropping below add-task targets the column end, including an empty column', async () => {
