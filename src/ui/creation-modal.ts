@@ -15,9 +15,10 @@ export class CreationModal extends Modal {
 
   constructor(app: App, private readonly repository: Pick<KanbanService, 'createBoard' | 'createTask'>,
     private readonly created: (boardId: string) => void,
-    private readonly board?: Board, columnId?: string) {
+    private readonly board?: Board, columnId?: string, due = '') {
     super(app)
     this.columnId = columnId ?? board?.defaultColumn ?? ''
+    this.due = due
   }
 
   override onOpen(): void {
@@ -38,6 +39,7 @@ export class CreationModal extends Modal {
       })
       new Setting(fields).setName('截止日期').addText((input) => {
         input.inputEl.type = 'date'
+        input.setValue(this.due)
         input.onChange((value) => { this.due = value; this.dirty = true })
       })
     } else {

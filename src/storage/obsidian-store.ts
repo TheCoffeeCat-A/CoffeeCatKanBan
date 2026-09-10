@@ -18,6 +18,29 @@ export class ObsidianNoteStore implements NoteStore {
     return this.app.vault.process(this.file(path), update)
   }
 
+  async appendLink(source: NoteSource, targetPath: string, assertActive: () => void): Promise<string> {
+    validateNotePath(targetPath)
+    const target = this.file(targetPath)
+    if (targetPath === source.path) throw new KanbanError('CONFLICT', 'Choose another note')
+    const file = await this.checkedFile(source.path, source.content, assertActive)
+    return this.app.vault.process(file, (current) => {
+      assertActive()
+      if (current !== source.content || file.path !== source.path || this.file(source.path) !== file
+        || target.path !== targetPath || this.file(targetPath) !== target) {
+        throw new KanbanError('CONFLICT', 'Note changed; reopen the task before linking')
+      }
+      for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+        const view = leaf.view
+        if (view instanceof MarkdownView && view.file === file && view.editor.getValue() !== current) {
+          throw new KanbanError('CONFLICT', 'Save the native editor changes before linking')
+        }
+      }
+      const link = this.app.fileManager.generateMarkdownLink(target, source.path)
+      const newline = current.includes('\r\n') ? '\r\n' : '\n'
+      return current + (current.endsWith('\n') ? newline : newline + newline) + link + newline
+    })
+  }
+
   async create(path: string, content: string, assertActive: () => void, source?: NoteSource): Promise<void> {
     validateNotePath(path)
     const folders = path.split('/').slice(0, -1)

@@ -40,6 +40,23 @@ test('stored query states validate allowed modes without carrying unknown values
   assert.deepEqual(readQuery(null), defaultQuery())
   assert.deepEqual(readQuery({ text: 123, column: {}, due: 'arbitrary', sort: 'random' }), defaultQuery())
   assert.equal(readQuery({ sort: 'due', text: 'Task' }).sort, 'due')
+  assert.equal(readQuery({ sort: 'title' }).direction, 'asc')
+  assert.equal(readQuery({ sort: 'column', direction: 'desc' }).direction, 'desc')
+})
+
+test('sort directions retain stable ties, missing dates last and board column order', () => {
+  const undated = { ...first, id: 'undated', due: undefined, order: 'a2' }
+  const source = [first, second, undated] as readonly Task[]
+  const columns = [{ id: 'todo', title: 'Z' }, { id: 'doing', title: 'A' }]
+  const ids = (sort: 'title' | 'column' | 'due' | 'priority', direction: 'asc' | 'desc') =>
+    queryTasks(source, 'board', { ...defaultQuery(), sort, direction }, false, undefined, undefined, columns).map((task) => task.id)
+  assert.deepEqual(ids('title', 'desc'), ['one', 'undated', 'two'])
+  assert.deepEqual(ids('due', 'asc'), ['two', 'one', 'undated'])
+  assert.deepEqual(ids('due', 'desc'), ['one', 'two', 'undated'])
+  assert.deepEqual(ids('column', 'asc'), ['one', 'undated', 'two'])
+  assert.deepEqual(ids('column', 'desc'), ['two', 'one', 'undated'])
+  assert.deepEqual(ids('priority', 'asc'), ['one', 'undated', 'two'])
+  assert.deepEqual(ids('priority', 'desc'), ['two', 'one', 'undated'])
 })
 
 test('tag and assignee inputs split native separators and remove duplicates', () => {

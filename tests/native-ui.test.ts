@@ -118,11 +118,22 @@ class ModalStub {
   contentEl = new ElementStub()
   titleEl = new ElementStub()
   closed = false
-  constructor(readonly app: unknown) {}
+  constructor(readonly app: unknown) {
+    Object.assign(app as object, { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } })
+  }
   open(): void { ModalStub.last = this; this.onOpen() }
   close(): void { this.closed = true; this.onClose() }
   onOpen(): void {}
   onClose(): void {}
+}
+
+class PickerStub extends ModalStub {
+  onChooseItem(_file: unknown): void {}
+}
+
+class ComponentStub {
+  load(): void {}
+  unload(): void {}
 }
 
 class ViewStub {
@@ -165,13 +176,17 @@ function loadModal(filename: string, exportName: string): ModalConstructor {
   const result = { exports: {} as Record<string, ModalConstructor> }
   const nativeRequire = createRequire(resolve('package.json'))
   const dependency = (name: string): unknown => name === 'obsidian'
-    ? { Modal: ModalStub, ItemView: ViewStub, Setting: SettingStub, Menu: MenuStub, Notice: class {}, setIcon: () => undefined }
+    ? { Modal: ModalStub, ItemView: ViewStub, Setting: SettingStub, Menu: MenuStub, Notice: class {}, setIcon: () => undefined,
+      Component: ComponentStub, FuzzySuggestModal: PickerStub, TFile: class {},
+      parseLinktext: (link: string) => ({ path: link, subpath: '' }),
+      MarkdownRenderer: { render: async (_app: unknown, body: string, container: ElementStub) => { container.setText(body) } } }
     : nativeRequire(name)
   new Function('module', 'exports', 'require', output)(result, result.exports, dependency)
   return result.exports[exportName]!
 }
 
 const Creation = loadModal('creation-modal.ts', 'CreationModal')
+const OperationReport = loadModal('operation-report-modal.ts', 'OperationReportModal')
 const Columns = loadModal('columns-modal.ts', 'ColumnsModal')
 const Properties = loadModal('task-modal.ts', 'TaskPropertyModal')
 const TaskFile = loadModal('task-file-modal.ts', 'TaskFileModal')
@@ -188,6 +203,89 @@ const board: Board = {
   defaultColumn: 'todo', doneColumn: 'done',
   columns: [{ id: 'todo', title: 'Todo' }, { id: 'doing', title: 'Doing' }, { id: 'done', title: 'Done' }],
 }
+
+test('note linking refreshes body preview and closed pickers cannot write', async () => {
+  const draft = { task: taskFixture('linked'), board, content: '---\ncustom: value\n---\nOriginal body' }
+  let writes = 0
+  const service = {
+    commit: async () => undefined,
+    linkNote: async (expected: typeof draft, path: string) => {
+      writes += 1
+      assert.equal(path, 'Other.md')
+      return { ...expected, content: expected.content + '\n[[Other]]\n' }
+    },
+  }
+  const modal = new Properties({}, draft, service, () => undefined)
+  modal.open()
+  assert.equal(modal.contentEl.querySelector('.markdown-rendered')!.textContent, 'Original body')
+  button(modal, '选择笔记').action()
+  ;(ModalStub.last as PickerStub).onChooseItem({ path: 'Other.md' })
+  await nextTurn()
+  assert.equal(writes, 1)
+  assert.ok(modal.contentEl.querySelector('.markdown-rendered')!.textContent.includes('[[Other]]'))
+  button(modal, '选择笔记').action()
+  const picker = ModalStub.last as PickerStub
+  modal.close()
+  picker.onChooseItem({ path: 'Other.md' })
+  assert.equal(writes, 1)
+})
+
+test('operation report shows each undo outcome and visible failure details', () => {
+  const modal = new OperationReport({}, '撤销结果', { results: [
+    { taskId: 'one', title: 'First', status: 'success' },
+    { taskId: 'two', title: 'Second', status: 'failed', message: 'External field conflict' },
+    { taskId: 'three', title: 'Third', status: 'not-executed', message: 'Stopped' },
+  ] })
+  modal.open()
+  const texts = modal.contentEl.descendants().map((element) => element.textContent)
+  assert.ok(texts.includes('成功: First'))
+  assert.ok(texts.includes('失败: Second'))
+  assert.ok(texts.includes('External field conflict'))
+  assert.ok(texts.includes('未执行: Third'))
+  button(modal, '关闭').action()
+  assert.equal(modal.closed, true)
+})
+
+test('calendar date creation prefills and submits the selected day', async () => {
+  let submitted: unknown
+  const service = {
+    scan: async () => ({ boards: [board], tasks: [], diagnostics: [] }), hasUndo: () => false,
+    createTask: async (input: unknown) => { submitted = input },
+  }
+  const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, service, () => undefined)
+  await view.onOpen()
+  await view.setState({ boardId: board.id, mode: 'calendar', calendarMonth: '2028-02' }, {})
+  await nextTurn()
+  const create = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '新建任务: 2028-02-29')!
+  assert.ok(create)
+  create.listeners.get('click')!({})
+  const modal = ModalStub.last!
+  assert.equal(row(modal, '截止日期').controls[0]!.value, '2028-02-29')
+  row(modal, '标题').controls[0]!.change('Leap task')
+  button(modal, '创建').action()
+  await nextTurn()
+  assert.deepEqual(submitted, { boardId: board.id, title: 'Leap task', columnId: 'todo', due: '2028-02-29' })
+})
+
+test('sort direction persists and clear restores disabled manual direction', async () => {
+  const service = { scan: async () => ({ boards: [board], tasks: [], diagnostics: [] }), hasUndo: () => false }
+  const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, service, () => undefined)
+  await view.onOpen()
+  await nextTurn()
+  const control = (label: string) => view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === label)!
+  const sort = control('显示排序')
+  const direction = control('排序方向')
+  assert.equal(direction.disabled, true)
+  sort.value = 'column'
+  sort.listeners.get('change')!()
+  assert.equal(direction.disabled, false)
+  direction.value = 'desc'
+  direction.listeners.get('change')!()
+  assert.deepEqual(view.getState().query, { text: '', column: '', tag: '', priorityOnly: false, due: '', sort: 'column', direction: 'desc' })
+  control('清除筛选和排序').listeners.get('click')!({})
+  assert.equal(direction.disabled, true)
+  assert.equal(direction.value, 'asc')
+})
 
 function row(modal: ModalStub, name: string): SettingStub {
   const setting = modal.contentEl.allSettings().find((entry) => entry.name === name)

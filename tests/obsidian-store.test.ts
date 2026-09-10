@@ -39,6 +39,11 @@ function fixture() {
     vault: {
       getAbstractFileByPath: (path: string) => files.get(path),
       getMarkdownFiles: () => [...files.values()],
+      process: async (target: FileStub, update: (content: string) => string) => {
+        const content = update(contents.get(target.path)!)
+        contents.set(target.path, content)
+        return content
+      },
       read: async (target: FileStub) => {
         const content = contents.get(target.path)
         if (content === undefined) throw new Error('Missing file')
@@ -51,7 +56,8 @@ function fixture() {
       },
     },
     workspace: { getLeavesOfType: () => leaves },
-    fileManager: { trashFile: async (target: FileStub) => { trashed.push(target); files.delete(target.path) } },
+    fileManager: { generateMarkdownLink: (target: FileStub, _source: string) => `[[${target.path}]]`,
+      trashFile: async (target: FileStub) => { trashed.push(target); files.delete(target.path) } },
   }
   const store = new moduleResult.exports.ObsidianNoteStore(host as unknown as App)
   return { host, store, file, files, contents, leaves, trashed, created }
@@ -119,4 +125,41 @@ test('trash rejects unsafe paths and reports host failure without falling back t
   await assert.rejects(current.store.trash('Task.md', '# Saved body\n', () => undefined), /Recycle service unavailable/)
   assert.equal(current.files.get('Task.md'), current.file)
   assert.equal(current.trashed.length, 0)
+})
+
+test('link append preserves original bytes and rejects unsaved or changed sources', async () => {
+  const current = fixture()
+  current.files.set('Other.md', new FileStub('Other.md'))
+  const original = '\uFEFF---\r\ncustom: value\r\n---\r\nOriginal body\r\n'
+  current.contents.set('Task.md', original)
+  const source = { path: 'Task.md', content: original }
+  current.leaves.push({ view: new MarkdownViewStub(current.file, { getValue: () => 'unsaved' }) })
+  await assert.rejects(current.store.appendLink!(source, 'Other.md', () => undefined), /Save the native editor/)
+  assert.equal(current.contents.get('Task.md'), original)
+  current.leaves.length = 0
+  const result = await current.store.appendLink!(source, 'Other.md', () => undefined)
+  assert.equal(result, original + '\r\n[[Other.md]]\r\n')
+  await assert.rejects(current.store.appendLink!(source, 'Other.md', () => undefined), /changed/)
+  assert.equal(current.trashed.length, 0)
+  assert.equal(current.created.length, 0)
+})
+
+test('link final callback rejects source, target, editor and lifecycle races', async () => {
+  for (const race of ['source', 'target', 'editor', 'inactive']) {
+    const current = fixture()
+    current.files.set('Other.md', new FileStub('Other.md'))
+    let active = true
+    const process = current.host.vault.process
+    current.host.vault.process = async (file, update) => {
+      if (race === 'source') current.contents.set('Task.md', 'External body')
+      if (race === 'target') current.files.set('Other.md', new FileStub('Other.md'))
+      if (race === 'editor') current.leaves.push({ view: new MarkdownViewStub(current.file, { getValue: () => 'Unsaved' }) })
+      if (race === 'inactive') active = false
+      return process(file, update)
+    }
+    await assert.rejects(current.store.appendLink!({ path: 'Task.md', content: '# Saved body\n' }, 'Other.md', () => {
+      if (!active) throw new Error('Inactive')
+    }))
+    assert.equal(current.contents.get('Task.md'), race === 'source' ? 'External body' : '# Saved body\n')
+  }
 })

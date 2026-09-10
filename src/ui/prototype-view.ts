@@ -8,6 +8,7 @@ import type { TaskFileAction } from '../domain/task-files'
 import type { KanbanService } from '../contracts'
 import { renderBoard } from './board-view'
 import { BatchActionModal } from './batch-action-modal'
+import { OperationReportModal } from './operation-report-modal'
 import { ColumnsModal } from './columns-modal'
 import { iconButton } from './controls'
 import { CreationModal } from './creation-modal'
@@ -115,7 +116,7 @@ export class PrototypeView extends ItemView {
     return !this.closed && Boolean(this.catalogue?.boards.some((board) => board.id === this.boardId))
   }
 
-  createTask(columnId?: string): void {
+  createTask(columnId?: string, due?: string): void {
     const board = this.catalogue?.boards.find((entry) => entry.id === this.boardId)
     if (!board || this.closed) return
     new CreationModal(this.app, this.repository, () => {
@@ -124,7 +125,7 @@ export class PrototypeView extends ItemView {
         this.saveState()
       }
       this.changed()
-    }, board, columnId).open()
+    }, board, columnId, due).open()
   }
 
   focusSearch(): void {
@@ -248,7 +249,7 @@ export class PrototypeView extends ItemView {
         undo.disabled = true
         void this.repository.undo(board.id).then((report) => {
           this.changed()
-          if (report.results.some((result) => result.status === 'failed')) new Notice('撤销部分失败, 请重新读取后重试')
+          if (!this.closed) new OperationReportModal(this.app, '撤销结果', report).open()
         }).catch((reason: unknown) => {
           new Notice(reason instanceof Error ? reason.message : '撤销失败')
         }).finally(() => {
@@ -292,7 +293,7 @@ export class PrototypeView extends ItemView {
         this.disposeBoard = undefined
         const renderGeneration = ++this.renderGeneration
         results.empty()
-        const visible = queryTasks(allTasks, board.id, this.query, this.showArchived, undefined, board.doneColumn)
+        const visible = queryTasks(allTasks, board.id, this.query, this.showArchived, undefined, board.doneColumn, board.columns)
         for (const taskId of [...this.selectedTasks.keys()]) {
           if (!visible.some((task) => task.id === taskId)) this.selectedTasks.delete(taskId)
         }
@@ -332,7 +333,7 @@ export class PrototypeView extends ItemView {
           this.calendarMonth = month
           this.saveState()
           renderResults()
-        }, selection)
+        }, selection, (date) => this.createTask(undefined, date))
         if (this.pendingFocus && !this.acting) {
           const target = [...results.querySelectorAll<HTMLElement>('[data-task-id]')].find((element) => element.dataset.taskId === this.pendingFocus)
             target?.querySelector<HTMLButtonElement>('.cckb-task-link, .cckb-calendar-task')?.focus()

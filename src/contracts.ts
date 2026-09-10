@@ -6,6 +6,7 @@ import type { Board, Task } from './domain/model'
 import type { BatchTaskAction, TaskAction, TaskOperationReport } from './domain/task-actions'
 
 export interface NoteStore {
+  appendLink?(source: NoteSource, targetPath: string, assertActive: () => void): Promise<string>
   listPaths(): readonly string[]
   read(path: string): Promise<string>
   process(path: string, update: (content: string) => string): Promise<string>
@@ -20,6 +21,7 @@ export interface TaskDraft {
 }
 
 export interface KanbanService {
+  linkNote(expected: TaskDraft, targetPath: string): Promise<TaskDraft>
   scan(): Promise<Catalogue>
   draft(taskId: string): Promise<TaskDraft>
   createBoard(input: NewBoard): Promise<Board>

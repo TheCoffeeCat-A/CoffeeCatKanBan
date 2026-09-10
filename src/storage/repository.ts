@@ -23,6 +23,19 @@ export class TaskRepository implements KanbanService {
     return this.enqueue(() => this.load('display'))
   }
 
+  linkNote(expected: TaskDraft, targetPath: string): Promise<TaskDraft> {
+    return this.enqueue(async () => {
+      await this.load()
+      const draft = this.fileDraft(expected)
+      if (!this.store.appendLink) throw new KanbanError('NOT_FOUND', 'Note linking is unavailable')
+      const content = await this.store.appendLink({ path: draft.task.path, content: draft.content }, targetPath, () => this.assertActive())
+      this.assertActive()
+      this.notes = this.notes.map((note) => note.path === draft.task.path ? { ...note, content } : note)
+      this.catalogue = buildCatalogue(this.notes)
+      return this.locate(draft.task.id)
+    })
+  }
+
   createBoard(input: NewBoard): Promise<Board> {
     return this.enqueue(async () => {
       await this.load()

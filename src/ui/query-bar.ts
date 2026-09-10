@@ -25,8 +25,11 @@ export function renderQueryBar(container: HTMLElement, board: Board, tasks: read
     (value) => update({ tag: value }))
   const due = select('日期筛选', current.due, [['', '全部日期'], ['overdue', '已逾期'], ['today', '今天到期'], ['undated', '无日期']],
     (value) => update({ due: value as TaskQuery['due'] }))
-  const sort = select('显示排序', current.sort, [['manual', '手动顺序'], ['title', '按标题'], ['due', '按截止日期'], ['priority', '高优先级优先']],
-    (value) => update({ sort: value as TaskQuery['sort'] }))
+  const sort = select('显示排序', current.sort, [['manual', '手动顺序'], ['title', '按标题'], ['column', '按列顺序'], ['due', '按截止日期'], ['priority', '高优先级优先']],
+    (value) => { update({ sort: value as TaskQuery['sort'] }); direction.disabled = value === 'manual' })
+  const direction = select('排序方向', current.direction, [['asc', '正序'], ['desc', '倒序']],
+    (value) => update({ direction: value as TaskQuery['direction'] }))
+  direction.disabled = current.sort === 'manual'
   const priority = bar.createEl('label', { cls: 'cckb-priority-filter' })
   const checkbox = priority.createEl('input', { type: 'checkbox' })
   checkbox.checked = current.priorityOnly
@@ -35,6 +38,7 @@ export function renderQueryBar(container: HTMLElement, board: Board, tasks: read
   iconButton(bar, 'filter-x', '清除筛选和排序', () => {
     current = defaultQuery()
     search.value = ''; column.value = ''; tag.value = ''; due.value = ''; sort.value = 'manual'; checkbox.checked = false
+    direction.value = 'asc'; direction.disabled = true
     changed(current)
     search.focus()
   })

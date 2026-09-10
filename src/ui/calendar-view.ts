@@ -6,7 +6,8 @@ import { showTaskMenu, type TaskInteraction } from './task-menu'
 import { selectionCheckbox, type TaskSelection } from './task-selection'
 
 export function renderCalendar(container: HTMLElement, board: Board, visible: readonly Task[], allTasks: readonly Task[],
-  interaction: TaskInteraction, monthValue: string, changeMonth: (month: string) => void, selection: TaskSelection): void {
+  interaction: TaskInteraction, monthValue: string, changeMonth: (month: string) => void, selection: TaskSelection,
+  createTask: (date: string) => void): void {
   const month = calendarMonth(monthValue)
   const scroll = container.createDiv({ cls: 'cckb-data-scroll' })
   const wrapper = scroll.createDiv({ cls: 'cckb-calendar' })
@@ -37,6 +38,9 @@ export function renderCalendar(container: HTMLElement, board: Board, visible: re
   for (const cell of month.cells) {
     const day = grid.createEl('div', { cls: `cckb-calendar-day${cell.inMonth ? '' : ' cckb-calendar-day-outside'}${cell.date === today ? ' cckb-calendar-day-today' : ''}`, attr: { role: 'gridcell', 'aria-label': cell.date } })
     day.createEl('time', { text: String(cell.day), attr: { datetime: cell.date } })
+    iconButton(day, 'plus', `新建任务: ${cell.date}`, () => {
+      if (interaction.available()) createTask(cell.date)
+    })
     const tasks = day.createDiv({ cls: 'cckb-calendar-tasks' })
     if (cell.inMonth) {
       for (const task of byDate.get(cell.date) ?? []) renderCalendarTask(tasks, task, board, allTasks, interaction, selection)

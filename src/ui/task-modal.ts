@@ -2,14 +2,16 @@ import { Modal, Notice, Setting, type App } from 'obsidian'
 import { prepareChange, type TaskPatch } from '../domain/changes'
 import { tagValues, textValues } from '../domain/query'
 import type { KanbanService, TaskDraft } from '../contracts'
+import { renderNoteContent } from './note-content'
 
 export class TaskPropertyModal extends Modal {
   private patch: TaskPatch = {}
   private saving = false
   private live = false
   private discardPrompt: HTMLElement | undefined
+  private disposeContent: (() => void) | undefined
 
-  constructor(app: App, private readonly draft: TaskDraft, private readonly repository: Pick<KanbanService, 'commit'>,
+  constructor(app: App, private draft: TaskDraft, private readonly repository: Pick<KanbanService, 'commit' | 'linkNote'>,
     private readonly changed: () => void) {
     super(app)
   }
@@ -73,6 +75,25 @@ export class TaskPropertyModal extends Modal {
       })
     })
     const errors = this.contentEl.createDiv({ cls: 'cckb-error', attr: { role: 'alert' } })
+    this.disposeContent = renderNoteContent(this.app, this.contentEl, this.draft, () => this.live && !this.saving, (path) => {
+      if (Object.keys(this.patch).length) {
+        errors.setText('请先保存或放弃属性修改, 再关联笔记')
+        return
+      }
+      this.saving = true
+      fields.disabled = true
+      void this.repository.linkNote(this.draft, path).then((draft) => {
+        this.draft = draft
+        this.changed()
+        if (!this.live) return
+        this.saving = false
+        this.disposeContent?.()
+        this.contentEl.empty()
+        this.onOpen()
+      }).catch((reason: unknown) => {
+        if (this.live) errors.setText(reason instanceof Error ? reason.message : '关联失败')
+      }).finally(() => { this.saving = false; fields.disabled = false })
+    })
     new Setting(fields).addButton((button) => {
       button.setButtonText('打开笔记').onClick(() => {
         void this.app.workspace.openLinkText(task.path, '', 'tab').catch((reason: unknown) => {
@@ -96,7 +117,7 @@ export class TaskPropertyModal extends Modal {
   }
 
   override close(): void {
-    if (this.saving && Object.keys(this.patch).length) return
+    if (this.saving) return
     if (Object.keys(this.patch).length) {
       if (this.discardPrompt) return
       const prompt = this.contentEl.createDiv({ attr: { role: 'alert' } })
@@ -120,6 +141,8 @@ export class TaskPropertyModal extends Modal {
 
   override onClose(): void {
     this.live = false
+    this.disposeContent?.()
+    this.disposeContent = undefined
     this.discardPrompt = undefined
     this.contentEl.empty()
   }
@@ -128,6 +151,7 @@ export class TaskPropertyModal extends Modal {
     const change = prepareChange(this.draft.content, this.patch)
     await this.repository.commit(change)
     this.patch = {}
+    this.saving = false
     this.changed()
     new Notice(change.fields.length ? '属性已保存' : '没有属性变更')
   }

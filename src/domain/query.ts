@@ -1,6 +1,6 @@
-import { compareTasks, isIsoDate, type Task } from './model'
+import { compareTasks, isIsoDate, type Board, type Task } from './model'
 
-export type TaskSort = 'manual' | 'title' | 'due' | 'priority'
+export type TaskSort = 'manual' | 'title' | 'column' | 'due' | 'priority'
 export type DueFilter = '' | 'overdue' | 'today' | 'undated'
 export interface TaskQuery {
   readonly text: string
@@ -9,10 +9,11 @@ export interface TaskQuery {
   readonly priorityOnly: boolean
   readonly due: DueFilter
   readonly sort: TaskSort
+  readonly direction: 'asc' | 'desc'
 }
 
 export function defaultQuery(): TaskQuery {
-  return { text: '', column: '', tag: '', priorityOnly: false, due: '', sort: 'manual' }
+  return { text: '', column: '', tag: '', priorityOnly: false, due: '', sort: 'manual', direction: 'asc' }
 }
 
 export function readQuery(value: unknown): TaskQuery {
@@ -24,7 +25,8 @@ export function readQuery(value: unknown): TaskQuery {
     tag: typeof data.tag === 'string' ? data.tag : '',
     priorityOnly: data.priorityOnly === true,
     due: data.due === 'overdue' || data.due === 'today' || data.due === 'undated' ? data.due : '',
-    sort: data.sort === 'title' || data.sort === 'due' || data.sort === 'priority' ? data.sort : 'manual',
+    sort: data.sort === 'title' || data.sort === 'column' || data.sort === 'due' || data.sort === 'priority' ? data.sort : 'manual',
+    direction: data.direction === 'desc' ? 'desc' : 'asc',
   }
 }
 
@@ -33,7 +35,7 @@ export function localDay(date = new Date()): string {
 }
 
 export function queryTasks(tasks: readonly Task[], boardId: string, query: TaskQuery,
-  showArchived: boolean, today = localDay(), doneColumn?: string): readonly Task[] {
+  showArchived: boolean, today = localDay(), doneColumn?: string, columns: Board['columns'] = []): readonly Task[] {
   const words = query.text.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
   const filtered = tasks.filter((task) => {
     if (task.boardId !== boardId || (!showArchived && task.archived)) return false
@@ -50,8 +52,12 @@ export function queryTasks(tasks: readonly Task[], boardId: string, query: TaskQ
     let comparison = 0
     if (query.sort === 'title') comparison = left.title.localeCompare(right.title, 'zh-CN')
     if (query.sort === 'priority') comparison = Number(right.priority) - Number(left.priority)
-    if (query.sort === 'due') comparison = (left.due ?? '9999-99-99').localeCompare(right.due ?? '9999-99-99')
-    return comparison || compareTasks(left, right)
+    if (query.sort === 'column') comparison = columns.findIndex((column) => column.id === left.column) - columns.findIndex((column) => column.id === right.column)
+    if (query.sort === 'due') {
+      if (!left.due !== !right.due) return left.due ? -1 : 1
+      comparison = (left.due ?? '').localeCompare(right.due ?? '')
+    }
+    return comparison * (query.direction === 'desc' ? -1 : 1) || compareTasks(left, right)
   })
 }
 
