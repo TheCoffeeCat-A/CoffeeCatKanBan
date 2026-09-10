@@ -1,4 +1,5 @@
 import { build, context } from 'esbuild'
+import { runtimeLicenses } from './licenses.mjs'
 
 const options = {
   entryPoints: ['src/main.ts'],
@@ -11,6 +12,7 @@ const options = {
   logLevel: 'info',
   sourcemap: false,
   legalComments: 'inline',
+  banner: { js: `/*! Third-party notices\n${(await runtimeLicenses()).replaceAll('*/', '* /')}*/` },
 }
 
 if (process.argv.includes('--watch')) {

@@ -97,8 +97,11 @@ class ControlStub {
 
 class SettingStub {
   name = ''
+  readonly descEl: ElementStub
+  disabled = false
   readonly controls: ControlStub[] = []
-  constructor(container: ElementStub) { container.settings.push(this) }
+  constructor(container: ElementStub) { container.settings.push(this); this.descEl = container.createDiv() }
+  setDisabled(value: boolean): this { this.disabled = value; return this }
   setName(value: string): this { this.name = value; return this }
   setDesc(_value: string): this { return this }
   addText(callback: (input: ControlStub) => void): this { return this.add(callback) }
@@ -201,6 +204,7 @@ const Creation = loadModal('creation-modal.ts', 'CreationModal')
 const Conversion = loadModal('conversion-modal.ts', 'ConversionModal')
 const SettingsTab = loadModal('settings-tab.ts', 'KanbanSettingsTab') as unknown as new (...args: unknown[]) => {
   containerEl: ElementStub; display(): void; hide(): void
+  getSettingDefinitions(): { name: string; render(setting: SettingStub): (() => void) }[]
 }
 const OperationReport = loadModal('operation-report-modal.ts', 'OperationReportModal')
 const OrderRepair = loadModal('order-repair-modal.ts', 'OrderRepairModal')
@@ -995,4 +999,43 @@ test('order repair requires preview, rejects unavailable views and locks repeate
   release!()
   await nextTurn()
   assert.equal(modal.closed, true)
+})
+
+test('declarative settings are searchable without resetting drafts and disposed rows cannot save', async () => {
+  const current = { defaultView: 'board', boardFolder: '', taskFolder: 'Tasks', showArchived: false }
+  let writes = 0
+  const tab = new SettingsTab({}, {}, () => current, async (settings: typeof current) => { writes++; Object.assign(current, settings) })
+  const definitions = tab.getSettingDefinitions()
+  assert.equal(tab.containerEl.children.length, 0)
+  assert.equal(definitions.length, 5)
+  const cleanup = definitions.map((definition) => definition.render(new SettingStub(tab.containerEl).setName(definition.name)))
+  tab.containerEl.allSettings()[1]!.controls[0]!.change('Boards')
+  tab.getSettingDefinitions()
+  const save = tab.containerEl.allSettings()[4]!.controls[0]!
+  save.action()
+  await nextTurn()
+  assert.equal(current.boardFolder, 'Boards')
+  for (const dispose of cleanup) dispose()
+  save.action()
+  assert.equal(writes, 1)
+})
+
+test('reopening settings during persistence keeps submitted values and unlocks the new form', async () => {
+  let finish!: () => void
+  const current = { defaultView: 'board', boardFolder: '', taskFolder: 'Tasks', showArchived: false }
+  const tab = new SettingsTab({}, {}, () => current, async (settings: typeof current) => {
+    await new Promise<void>((resolve) => { finish = resolve })
+    Object.assign(current, settings)
+  })
+  tab.display()
+  tab.containerEl.allSettings()[1]!.controls[0]!.change('Submitted')
+  tab.containerEl.allSettings()[4]!.controls[0]!.action()
+  tab.hide()
+  tab.display()
+  assert.equal(tab.containerEl.allSettings()[1]!.controls[0]!.value, 'Submitted')
+  assert.ok(tab.containerEl.allSettings().every((row) => row.disabled))
+  finish()
+  await nextTurn()
+  assert.ok(tab.containerEl.allSettings().every((row) => !row.disabled))
+  assert.equal(current.boardFolder, 'Submitted')
 })

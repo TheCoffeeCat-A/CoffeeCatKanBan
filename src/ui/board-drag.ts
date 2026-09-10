@@ -80,6 +80,11 @@ export class BoardDrag {
   } {
     if (anchor) return { element, anchor, side: this.side(event, element) }
     for (const card of element.querySelectorAll<HTMLElement>('[data-task-id]')) {
+      const viewport = card.closest?.('.cckb-virtual-viewport')
+      if (viewport) {
+        const bounds = viewport.getBoundingClientRect()
+        if (event.clientY < bounds.top || event.clientY >= bounds.bottom) continue
+      }
       const task = this.anchors.get(card)
       if (task && this.canDrop(task) && this.side(event, card) === 'before') {
         return { element: card, anchor: task, side: 'before' }

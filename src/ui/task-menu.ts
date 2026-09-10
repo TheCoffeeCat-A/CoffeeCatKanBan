@@ -10,6 +10,8 @@ export interface TaskInteraction {
   readonly fileAction: (task: Task, action: TaskFileAction) => void
   readonly available: () => boolean
   readonly manualOrder: boolean
+  readonly listScroll?: Map<string, number>
+  readonly focusTaskId?: string | undefined
 }
 
 export function showTaskMenu(event: MouseEvent, task: Task, board: Board, allTasks: readonly Task[], interaction: TaskInteraction): void {

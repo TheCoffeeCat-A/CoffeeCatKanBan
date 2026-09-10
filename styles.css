@@ -525,3 +525,42 @@
 .cckb-prototype .cckb-batch-report {
   margin-top: var(--size-4-3);
 }
+
+.cckb-prototype .cckb-virtual-viewport {
+  height: min(65vh, 640px);
+  min-height: 160px;
+  overflow: auto;
+  overflow-anchor: none;
+  position: relative;
+}
+
+.cckb-prototype .cckb-virtual-content {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.cckb-prototype .cckb-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  padding-bottom: 8px;
+}
+
+.cckb-prototype .cckb-table:has(.cckb-virtual-content) { display: block; }
+.cckb-prototype .cckb-table:has(.cckb-virtual-content) thead {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--background-primary);
+}
+.cckb-prototype .cckb-table:has(.cckb-virtual-content) tr {
+  display: grid;
+  grid-template-columns: minmax(160px, 2fr) repeat(6, minmax(72px, 1fr)) 52px;
+  padding-bottom: 0;
+}
+.cckb-prototype .cckb-table:has(.cckb-virtual-content) td { overflow-wrap: anywhere; min-width: 0; }
+.cckb-prototype .cckb-calendar-tasks .cckb-virtual-viewport { height: 240px; }
+.cckb-prototype .cckb-virtual-viewport:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }

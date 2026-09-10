@@ -41,6 +41,7 @@ export class PrototypeView extends ItemView {
   private searchInput: HTMLInputElement | undefined
   private fileModal: TaskFileModal | undefined
   private readonly selectedTasks = new Map<string, Task>()
+  private readonly listScroll = new Map<string, number>()
 
   constructor(leaf: WorkspaceLeaf, private readonly repository: KanbanService,
     private readonly changed: () => void, private readonly settings: () => KanbanSettings = defaultSettings) {
@@ -123,9 +124,11 @@ export class PrototypeView extends ItemView {
   createTask(columnId?: string, due?: string): void {
     const board = this.catalogue?.boards.find((entry) => entry.id === this.boardId)
     if (!board || this.closed) return
-    new CreationModal(this.app, this.repository, () => {
+    new CreationModal(this.app, this.repository, (_boardId, taskId) => {
       if (!this.closed) {
         this.query = defaultQuery()
+        this.listScroll.clear()
+        this.pendingFocus = taskId
         this.saveState()
       }
       this.changed()
@@ -144,6 +147,7 @@ export class PrototypeView extends ItemView {
     new CreationModal(this.app, this.repository, (boardId) => {
       if (!this.closed) {
         this.boardId = boardId
+        this.listScroll.clear()
         this.query = defaultQuery()
         this.saveState()
       }
@@ -235,6 +239,8 @@ export class PrototypeView extends ItemView {
     select.value = this.boardId
     select.addEventListener('change', () => {
       this.boardId = select.value
+      this.listScroll.clear()
+      this.selectedTasks.clear()
       this.query = defaultQuery()
       this.saveState()
       this.render(catalogue)
@@ -278,6 +284,7 @@ export class PrototypeView extends ItemView {
         const button = iconButton(tabs, mode === 'board' ? 'columns-3' : mode === 'data' ? 'table-2' : 'calendar-days',
           mode === 'board' ? '看板' : mode === 'data' ? '数据表' : '月历', () => {
           this.mode = mode
+          this.listScroll.clear()
           this.saveState()
           this.render(catalogue)
         })
@@ -287,6 +294,7 @@ export class PrototypeView extends ItemView {
       const checkbox = archive.createEl('input', { type: 'checkbox' })
       checkbox.checked = this.showArchived
       checkbox.addEventListener('change', () => {
+        this.listScroll.clear()
         this.showArchived = checkbox.checked
         this.saveState()
         this.render(catalogue)
@@ -303,9 +311,8 @@ export class PrototypeView extends ItemView {
         const renderGeneration = ++this.renderGeneration
         results.empty()
         const visible = queryTasks(allTasks, board.id, this.query, this.showArchived, undefined, board.doneColumn, board.columns)
-        for (const taskId of [...this.selectedTasks.keys()]) {
-          if (!visible.some((task) => task.id === taskId)) this.selectedTasks.delete(taskId)
-        }
+        const visibleIds = new Set(visible.map((task) => task.id))
+        for (const taskId of this.selectedTasks.keys()) if (!visibleIds.has(taskId)) this.selectedTasks.delete(taskId)
         summary.setText(`${visible.length} / ${allTasks.length} 个任务 · ${allTasks.filter((task) => task.archived).length} 个归档`)
         batchActions.empty()
         if (this.selectedTasks.size) {
@@ -327,6 +334,7 @@ export class PrototypeView extends ItemView {
           toggle: (task, selected) => {
             if (selected) this.selectedTasks.set(task.id, task)
             else this.selectedTasks.delete(task.id)
+            this.pendingFocus = task.id
             renderResults()
           },
         }
@@ -335,10 +343,12 @@ export class PrototypeView extends ItemView {
           act: (task, action) => this.act(task, action), manualOrder: this.query.sort === 'manual',
           fileAction: (task, action) => this.openFileTask(task, action),
           available: () => !this.closed && !this.acting && !this.undoing && renderGeneration === this.renderGeneration,
+          listScroll: this.listScroll, focusTaskId: this.pendingFocus,
         }
         if (this.mode === 'board') this.disposeBoard = renderBoard(results, board, visible, allTasks, interaction, (columnId) => this.createTask(columnId), selection)
-        else if (this.mode === 'data') renderData(results, board, visible, allTasks, interaction, selection)
-        else renderCalendar(results, board, visible, allTasks, interaction, this.calendarMonth, (month) => {
+        else if (this.mode === 'data') this.disposeBoard = renderData(results, board, visible, allTasks, interaction, selection)
+        else this.disposeBoard = renderCalendar(results, board, visible, allTasks, interaction, this.calendarMonth, (month) => {
+          this.listScroll.clear()
           this.calendarMonth = month
           this.saveState()
           renderResults()
@@ -350,6 +360,7 @@ export class PrototypeView extends ItemView {
         }
       }
       this.searchInput = renderQueryBar(filters, board, allTasks, this.query, (query) => {
+        this.listScroll.clear()
         this.query = query
         this.saveState()
         renderResults()

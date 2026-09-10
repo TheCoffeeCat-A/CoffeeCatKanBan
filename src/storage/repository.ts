@@ -1,6 +1,6 @@
 import type { ConversionDraft, KanbanService, NoteStore, TaskDraft } from '../contracts'
 import { convertNote } from '../domain/conversion'
-import { buildCatalogue, type Catalogue, type Diagnostic, type NoteSource } from '../domain/catalogue'
+import { buildCatalogue, buildCatalogueAsync, type Catalogue, type Diagnostic, type NoteSource } from '../domain/catalogue'
 import { changeColumns, type ColumnAction } from '../domain/columns'
 import { applyChange, prepareChange, reverseChange, type TaskChange } from '../domain/changes'
 import { availableNotePath, newBoardNote, newTaskNote, type NewBoard, type NewTask } from '../domain/creation'
@@ -49,7 +49,9 @@ export class TaskRepository implements KanbanService {
     for (const path of this.displayNotes.keys()) if (!present.has(path)) this.displayNotes.delete(path)
     const notes: NoteSource[] = []
     const errors: Diagnostic[] = []
+    let visited = 0
     for (const path of paths) {
+      if (++visited % 128 === 0) await this.cooperate()
       let note = this.dirtyPaths.has(path) ? undefined : this.displayNotes.get(path)
       if (!note) {
         try {
@@ -64,7 +66,8 @@ export class TaskRepository implements KanbanService {
       if (note) notes.push(note)
     }
     if (revision === this.displayRevision) this.dirtyPaths.clear()
-    const catalogue = buildCatalogue(notes, this.displayParsed)
+    const catalogue = await buildCatalogueAsync(notes, () => this.cooperate(), this.displayParsed)
+    this.assertActive()
     const result = Object.freeze({ ...catalogue, diagnostics: Object.freeze([...catalogue.diagnostics, ...errors]) })
     if (!errors.length && revision === this.displayRevision) {
       this.displaySnapshot = { revision, paths: [...paths], catalogue: result }
@@ -429,7 +432,9 @@ export class TaskRepository implements KanbanService {
     this.invalidate()
     const notes: NoteSource[] = []
     const readErrors: Diagnostic[] = []
+    let visited = 0
     for (const path of this.store.listPaths()) {
+      if (++visited % 128 === 0) await this.cooperate()
       try {
         notes.push({ path, content: await this.store.read(path) })
       } catch (reason) {
@@ -438,8 +443,9 @@ export class TaskRepository implements KanbanService {
       }
       this.assertActive()
     }
+    const catalogue = await buildCatalogueAsync(notes, () => this.cooperate())
+    this.assertActive()
     this.notes = notes
-    const catalogue = buildCatalogue(notes)
     this.catalogue = Object.freeze({
       ...catalogue,
       diagnostics: Object.freeze([...catalogue.diagnostics, ...readErrors]),
@@ -454,6 +460,15 @@ export class TaskRepository implements KanbanService {
     const source = this.notes.find((entry) => entry.path === task.path)
     if (!board || !source) throw new KanbanError('NOT_FOUND', 'Task source is unavailable')
     return Object.freeze({ task, board, content: source.content })
+  }
+
+  private async cooperate(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const channel = new MessageChannel()
+      channel.port1.onmessage = () => { channel.port1.close(); channel.port2.close(); resolve() }
+      channel.port2.postMessage(null)
+    })
+    this.assertActive()
   }
 
   // Reject a file operation when its confirmed path, content or board changed

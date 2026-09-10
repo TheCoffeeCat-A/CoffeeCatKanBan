@@ -1,6 +1,6 @@
 {
   "name": "coffeecat-kanban",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Native Obsidian task boards for CoffeeCatKanBan",
@@ -15,7 +15,10 @@
     "dev": "node scripts/build.mjs --watch",
     "test": "node scripts/test.mjs",
     "lint": "eslint src",
-    "check": "npm run typecheck && npm test && node scripts/build.mjs"
+    "check": "npm run typecheck && npm run lint && npm test && node scripts/build.mjs",
+    "test:browser": "node scripts/browser-check.mjs",
+    "bench:disk": "node scripts/disk-benchmark.mjs",
+    "release": "npm run check && node scripts/release.mjs"
   },
   "dependencies": {
     "fractional-indexing": "4.0.0",

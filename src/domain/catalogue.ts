@@ -18,10 +18,31 @@ export interface Catalogue {
 }
 
 export function buildCatalogue(notes: readonly NoteSource[], parsedNotes?: WeakMap<NoteSource, ReturnType<typeof parseNote>>): Catalogue {
+  const steps = catalogueSteps(notes, parsedNotes)
+  let step = steps.next()
+  while (!step.done) step = steps.next()
+  return step.value
+}
+
+export async function buildCatalogueAsync(notes: readonly NoteSource[], cooperate: () => Promise<void>,
+  parsedNotes?: WeakMap<NoteSource, ReturnType<typeof parseNote>>): Promise<Catalogue> {
+  const steps = catalogueSteps(notes, parsedNotes)
+  let step = steps.next()
+  let count = 0
+  while (!step.done) {
+    if (++count % 64 === 0) await cooperate()
+    step = steps.next()
+  }
+  return step.value
+}
+
+// Synchronous and cooperative scans share the same identity/membership checks.
+function* catalogueSteps(notes: readonly NoteSource[], parsedNotes?: WeakMap<NoteSource, ReturnType<typeof parseNote>>): Generator<void, Catalogue> {
   const identities = new Map<string, string[]>()
   const candidates: (Board | Task)[] = []
   const diagnostics: Diagnostic[] = []
   for (const note of notes) {
+    yield
     try {
       const parsed = parsedNotes?.has(note) ? parsedNotes.get(note)! : parseNote(note.content)
       parsedNotes?.set(note, parsed)
@@ -52,6 +73,7 @@ export function buildCatalogue(notes: readonly NoteSource[], parsedNotes?: WeakM
   const boardsById = new Map(boards.map((board) => [board.id, board]))
   const tasks: Task[] = []
   for (const candidate of unique) {
+    yield
     if (!('boardId' in candidate)) continue
     const board = boardsById.get(candidate.boardId)
     try {

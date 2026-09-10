@@ -15,7 +15,7 @@ export class CreationModal extends Modal {
   private discardPrompt: HTMLElement | undefined
 
   constructor(app: App, private readonly repository: Pick<KanbanService, 'createBoard' | 'createTask'>,
-    private readonly created: (boardId: string) => void,
+    private readonly created: (boardId: string, taskId?: string) => void,
     private readonly board?: Board, columnId?: string, due = '', settings: KanbanSettings = defaultSettings()) {
     super(app)
     this.folder = settings.boardFolder
@@ -62,11 +62,11 @@ export class CreationModal extends Modal {
         this.saving = true
         fields.disabled = true
         errors.empty()
-        void this.create().then((boardId) => {
+        void this.create().then((result) => {
           this.dirty = false
           this.saving = false
           super.close()
-          this.created(boardId)
+          this.created(result.boardId, result.taskId)
           new Notice(this.board ? '任务已创建' : '看板已创建')
         }).catch((reason: unknown) => {
           if (this.live) errors.setText(reason instanceof Error ? reason.message : '创建失败')
@@ -101,15 +101,15 @@ export class CreationModal extends Modal {
     this.contentEl.empty()
   }
 
-  private async create(): Promise<string> {
+  private async create(): Promise<{ boardId: string; taskId?: string }> {
     if (this.board) {
-      await this.repository.createTask({
+      const task = await this.repository.createTask({
         boardId: this.board.id, title: this.title, columnId: this.columnId,
         ...(this.due ? { due: this.due } : {}),
       })
-      return this.board.id
+      return { boardId: this.board.id, taskId: task.id }
     }
     const board = await this.repository.createBoard({ title: this.title, folder: this.folder.trim(), taskFolder: this.taskFolder.trim() })
-    return board.id
+    return { boardId: board.id }
   }
 }

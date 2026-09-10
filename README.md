@@ -1,215 +1,67 @@
 # CoffeeCatKanBan
 
-Native Markdown task boards for Obsidian: board, data table and month calendar views rendered from plain Markdown notes, with guarded task actions, drag ordering and search filters.
+Obsidian 原生 Markdown 任务看板插件，一个任务对应一篇笔记，支持看板、数据表和月历。
 
-## Installation
+## 当前版本
 
-CoffeeCatKanBan is not in the community plugin directory yet, so install it manually.
+0.4.0 开发候选版本，仅桌面端。声明最低 Obsidian 1.10.0，最低版本及完整宿主验收尚未通过。
 
-1. Download `main.js`, `manifest.json` and `styles.css` from the newest [release](https://github.com/TheCoffeeCat-A/CoffeeCatKanBan/releases).
-2. Put the three files in `<your vault>/.obsidian/plugins/coffeecat-kanban/`.
-3. Reload Obsidian, then enable **CoffeeCatKanBan** under Settings → Community plugins (turn off Restricted mode first).
-4. Desktop only, Obsidian 1.10.0 or later. The plugin interface is currently in Chinese.
+- 三视图可变高度虚拟列表：单列表超过 80 项启用，保留聚焦/拖动行、Tab 连续导航、滚动位置及末尾定位，逐项渲染错误隔离。
+- 分批读取及解析扫描，通过 MessageChannel 让出主线程；严格写入校验、完整身份检查、外部事件失效和停用保护保留。
+- 全局设置接入原生搜索，保留旧版 display 兼容；显式保存、失败草稿、关闭及重开保护仍有效。
+- 本地候选包脚本生成运行文件、完整依赖许可、安装回退说明和 SHA-256 清单，不自动上传发布。
 
-## Usage
+## 已实现功能
 
-- Open the plugin from the ribbon icon or from the command palette (打开看板 / open board). With a single valid board it is selected automatically.
-- The folder button in the toolbar creates a board. Both the board folder and the folder for new task notes are relative to the vault root.
-- The new task buttons and the column `+` create one Markdown note per task, with a generated ID and a file name that does not overwrite existing notes.
-- Cards can be completed or restored, moved between columns, archived, reordered by dragging the handle, or edited through the card menu (priority, column, tags, assignees).
-- The toolbar switches between the board, the data table and the month calendar. The calendar grid also creates tasks with the due date pre-filled.
-- Search matches titles, tags, assignees and note text. Filters cover status, tags, high priority and dates, and are kept per tab.
-- Repair column order previews a full column, including hidden and archived tasks, and only rewrites order keys after confirmation.
-- An existing Markdown note can be added to a board from the file context menu. The note is converted in place, without moving or copying the file.
-- Copying a task creates an independent note in the same folder and column. Deleting a note asks for confirmation first and follows Obsidian's trash setting.
+- 多看板创建和切换，自定义列、默认列和完成列。
+- 任务创建，标题、日期、优先级、标签和负责人编辑，原生编辑器负责正文。
+- 拖拽/菜单/键盘移动、完成恢复、归档恢复、复制和单独确认删除。
+- 三视图共享数据，搜索筛选、双向排序、月历日期新建、页签状态保存。
+- 批量完成/归档与逐项反馈，字段撤销，先预览再确认的列顺序修复。
+- 普通笔记原地转任务，正文预览、笔记关联、附件引用打开及失效链接提示。
+- 增量读取、解析缓存和无变化显示快照；手动重新读取可强制重建。
 
-## License
+## 安装和回退
 
-MIT, see [LICENSE](LICENSE).
+本地生成候选包使用 npm run release。将包内 main.js、manifest.json、styles.css 放入库内 .obsidian/plugins/coffeecat-kanban/，再在 Obsidian 中启用插件。
 
----
+升级前备份旧版三个文件。回退时停用插件、恢复备份并重新启用，不恢复整个笔记库。卸载插件不自动删除任务或看板 Markdown。
 
-## 中文说明
+## 长列表操作
 
-2026-09-10 性能增量: 无文件事件且路径列表未变化时复用显示目录快照, 读取失败不缓存快照, 强制刷新/严格读取继续失效缓存。任务所属看板通过 ID 映射查找。新增 100 看板/5000 任务的内存基线, 断言重复刷新零读取、单文件更新一次读取及内容一致; 不代表真实磁盘或 UI 性能, 未增加虚拟列表
+超过 80 项的列、数据表或月历任务列表按可视区域渲染，通过列表滚动条访问其余任务。Tab 可连续访问尚未挂载的任务，明确勾选的任务不会因滚出窗口取消选择。搜索和计数覆盖完整筛选结果。
 
-## 2026-09-10 当前增量
+手动排序时使用卡片握柄拖动。“添加任务”按钮下方代表完整列末尾，菜单上下移动按完整列计算，包含筛选隐藏项。
 
-最终工程验证: 124 项受控测试、38 模块边界、严格类型检查、构建及文档校验通过; 不替代真实 Obsidian 验收
+## 开发验证
 
-- 普通 Markdown 可通过命令或文件右键加入看板: 选择看板和列, 预览新增字段, 确认后原地转换, 不移动或复制文件, 保留正文和无关属性
-- 已有 kanban_ 字段、无效 YAML、别名、数据诊断、未保存原生正文或过期确认会拒绝转换; 转换不加入属性撤销历史
-- 原生插件设置页支持默认视图、新建看板目录、新看板任务目录和默认显示归档; 显式保存成功才生效, 已有页签和看板定义优先
-- 显示索引按文件事件更新读取缓存, 复用未变化笔记的 YAML 解析; 手动重新读取强制重建, 写操作及草稿仍完整读取校验
-- 缓存仅在内存中, 仍会枚举路径并校验全体身份及归属, 没有虚拟列表或完整大库性能验收; 事件漏报可手动重建
-- 本轮未部署到真实库, 未执行真实转换或设置写入, 以下旧批次的未实现说明和测试数量属于历史记录
-- 上一轮卡片间隙拖放已修复并替换测试库运行文件: 间隙提示与提交使用同一相邻卡片锚点, 空列和底部仍追加; 真实拖拽仍待重载确认
+要求 Node.js >=22.12.0，依赖版本已锁定。
 
-Obsidian 桌面插件工程, 作者 TheCoffeeCat, 插件 ID 为 `coffeecat-kanban`
+- npm run check：模块边界、严格类型、lint、受控测试和构建。
+- npm run test:browser：先将 CCKB_BROWSER 设为本机 Edge/Chromium 可执行文件绝对路径，不下载浏览器。
+- npm run bench:disk：在工程临时目录生成并清理 100/1000/5000 条合成 Markdown，记录索引性能。
+- npm run release：检查并生成 .cache/releases 下的独立候选目录。
+- node scripts/verify.mjs：校验工程及上级知识库的元数据、链接和临时文件。
 
-当前开发版本为 0.3.3, 在 M3 第一批任务操作和自适应看板布局基础上新增任务复制, 单独确认的笔记删除, 完整数据表和月历视图, 保留安全创建, 列管理和属性撤销
+浏览器回归使用生产渲染模块、真实 Chromium DOM 与最小宿主控件替身，不等同于 Obsidian 验收。磁盘基准不清空系统文件缓存。
 
-笔记关联、正文预览及批量完成/恢复/归档操作已有工程实现, 全局设置页和发布验收仍留在后续阶段
+## 当前限制
 
-任务详情支持原生 Markdown 正文预览、正文已有笔记链接与附件引用列表、失效目标提示和选择已有笔记追加链接。关联遵循宿主链接格式偏好, 只追加任务正文, 不改写目标笔记或附件, 不属于属性撤销。存在属性草稿时先保存或放弃, 存在未保存原生正文时拒绝追加; 源文件变化需重开详情, 不自动重试。引用列表随宿主缓存 changed/resolved 和文件 rename/delete 事件刷新, 关闭时解除订阅, 不覆盖属性草稿或正文预览快照。当前 106 项受控测试通过, 本轮未部署或执行真宿主验收
+- 最新候选包未部署到真实测试库，宿主设置搜索、真实拖拽、回收恢复、多页签/未保存编辑冲突、停用重启、默认主题及最低版本仍待验收。
+- 单个超大 YAML 解析和共享队列慢读仍可能延迟操作，分批调度不是后台线程或跨文件事务。
+- 撤销仅覆盖受支持字段操作；正文、新建、复制、删除、列管理、笔记转换不属于字段撤销，重启不保留撤销历史。
+- 移动端、提醒、重复任务、周/日视图、附件导入管理、跨页签拖放不在首版范围。
 
-2026-09-10 补齐: 三视图共享标题/列定义顺序/日期/优先级的正倒序, 相同值保留手动次序且无日期始终置后; 优先级正序保持高优先级优先, 手动排序忽略方向, 旧页签默认正序
+## 开发文档
 
-月历日期格加号可新建并预填该日期, 包括相邻月份日期; 撤销结果窗口逐项显示成功/跳过/失败/未执行及错误原因, 不自动重试冲突
+- [开发指令](../AGENTS.md)
+- [当前进度](../开发知识库/当前进度.md)
+- [需求与规划](../开发知识库/需求与规划.md)
+- [开发与验证](../开发知识库/开发与验证.md)
+- [数据与文件安全](../开发知识库/数据与文件安全.md)
 
-0.3.2 基础三视图已部署到 C 盘测试库, 本轮新增批量能力仅完成工程实现与本地构建, 尚未重新部署批量版本
+本目录是插件工程，上级开发知识库是独立 Obsidian 库。
 
-## 模块化约定
+## 许可
 
-- src/contracts.ts 定义共享类型, UI 使用最小能力接口, 不直接依赖 TaskRepository 实现
-- domain 负责纯逻辑, repository 负责业务编排与提交, obsidian-store 负责宿主文件调用, main 只组合实现和注册入口
-- task-actions 和 query 分别负责动作计算与只读查询, UI 拆分为卡片, 菜单, 拖拽, 筛选栏, 看板呈现及数据表, 主视图只组合状态与动作回调
-- `npm run check:boundaries` 拒绝反向依赖, 导入循环, UI 直连存储, 动态加载和契约文件运行时初始化
-- 单文件读取失败只在显示扫描中降级为诊断, 其他健康数据继续展示; 保存, 新建及列管理仍严格校验完整读取
-- 详细职责和限制见 [架构与决策](../开发知识库/架构与决策.md), 不把目录拆分等同于完全运行时隔离
-
-## 基础看板
-
-- 命令面板执行打开看板或点击 CoffeeCatKanBan 侧栏图标, 只有一个有效看板时自动选中
-- 文件浏览器中右键看板或任务笔记, 选择在 CoffeeCatKanBan 中打开, 不接管普通 Markdown 点击打开行为
-- 顶部文件夹加号新建看板, 可以指定看板文件夹和新任务文件夹, 路径均相对当前 Vault 根目录
-- 点击新建任务或列内加号, 创建属于当前看板的独立 Markdown 笔记, 自动分配 ID 和不冲突的文件名
-- 管理看板列支持新增, 改名, 前后排序, 删除空列和选择默认/完成列, 保存一列不会丢失其他未保存标题
-- 非空列的删除会被拒绝, 归档和可解析的异常任务引用也计入检查; 默认列和完成列不能直接删除
-- 点击卡片标题编辑属性, 点击笔记图标打开原生编辑器, 启用显示归档可查看和恢复归档任务
-- 看板/数据表/月历按钮切换显示方式, 数据表展示状态, 截止日期, 优先级, 标签, 负责人和归档, 原打开数据验证视图命令仍可使用, 页签 ID 保持兼容
-- 月历按本地时间使用周一开周的六周网格, 支持前后月份切换和回到本月, 无日期及月份外任务在网格下方保留
-
-## 任务操作
-
-- 工具栏的修复列顺序入口先选列并预览完整清单, 包含隐藏及归档任务, 确认后仅改顺序键, 成功子集共享一次属性撤销
-- 修复按原手动次序分配现有最大键之后的新键, 不与旧键碰撞; 中途失败会停止并逐项报告, 可能暂时改变列内次序, 不自动跨文件回滚
-- 旧预览、列成员变化、源内容变化或任意数据诊断会拒绝或停止修复; 无效键导致无法解析的任务仍需先修正原笔记, 本入口处理可解析的重复键及缺键
-- 本轮 111 项受控测试通过, 未部署 C 盘或执行真实库顺序修复
-
-- 点击卡片前的复选图标完成或恢复任务, 恢复使用完成前的列; 目标列无效时会提示, 可以通过菜单明确选择其他列
-- 手动顺序模式下拖动卡片底部的握柄, 放在其他卡片上半部/下半部可前后插入, 放在列空白处移动到列末
-- 0.3.1 起各列延伸至剩余可视区域, 添加任务按钮下方的空白也属于该列, 落下后追加到列末; 长列表最底部至少保留 96px 空白落点, 不改变相邻列边界
-- 拖拽仅接受当前页签看板内开始的任务, 不接受文件拖放或跨页签拖动, 拖回自身不会移动
-- 卡片的更多操作或右键菜单可完成/恢复, 设定优先级, 归档/取消归档, 换列及上下移动
-- 卡片标题获得焦点后, Alt+ArrowUp / Alt+ArrowDown 可按完整列顺序移动, 不覆盖原生编辑器快捷键
-- 搜索匹配标题, 标签, 负责人和笔记正文, 多词及各筛选条件按交集处理, 只作用于当前看板
-- 可筛选状态, 标签, 高优先级和日期, 已逾期按本地日历日判断并排除完成列, 显示归档仍独立控制
-- 标题/日期/优先级排序只改变呈现, 不写入笔记; 非手动排序会禁用拖拽和上下重排, 清除按钮恢复所有筛选及手动排序
-- 查询保存在各页签状态中, 输入时只刷新任务区域; 命令面板的搜索当前看板任务可聚焦搜索框
-- 属性窗口可编辑标签及本地负责人, 支持逗号/换行分隔和去重, 标签去掉开头的 #, 不发送通知
-- 任务动作复用仓库提交和字段撤销, 旧的源任务状态/顺序或拖放目标已变化时拒绝操作, 不以旧界面快照覆盖新数据
-- 三种视图均可勾选当前可见任务, 批量完成/恢复或归档/取消归档; 执行前显示任务清单, 逐项报告成功/跳过/失败/未执行, 成功项共享一次撤销
-
-## 复制与删除
-
-- 卡片更多菜单和右键菜单新增复制任务及删除笔记入口, 两者均先打开独立原生确认窗口, 不在打开菜单时写文件
-- 复制在源笔记的文件夹和所属列创建独立副本, 保持标题, 生成新 UUID 和列尾顺序键, 文件名按序号避让, 不覆盖旧文件
-- 副本保留原始正文及链接, 日期, 优先级, 标签, 本地负责人和之前的列, 取消归档; 不继承 aliases 或其他自定义属性, 不复制附件文件
-- 删除确认展示笔记标题与完整库内路径, 明确删除整篇笔记而非只移除卡片; 仅调用 FileManager.trashFile 遵守宿主回收设置, 不使用永久删除备用路径
-- 复制/删除前重新读取并核对确认时的源路径, 完整内容与看板定义; 宿主提交前再次核对源文件及已打开的原生编辑器, 未保存或已变化时拒绝并要求重开确认
-- 执行期间按钮锁定, 连续点击不重复提交, 取消不修改文件, 失败保留目标与错误; 原看板关闭或切换后不能从旧窗口发起操作
-- 复制和删除不属于属性撤销范围, 删除只清除该任务对应的旧撤销记录, 不删除关联笔记/附件或改写反向链接
-- 文件检查与最终回收/创建不是跨进程事务, 极短窗口的外部竞争和回收结果不明确时需要检查宿主实际结果, 不自动重试或用全库快照回滚
-
-## 开发入口
-
-- [开发指令](../AGENTS.md): 每次开发前阅读, 改动后同步知识库
-- [当前进度](../开发知识库/当前进度.md): 已完成范围和未通过的阶段门槛
-- [数据与文件安全](../开发知识库/数据与文件安全.md): schema 及真实实现的安全限制
-- [开发与验证](../开发知识库/开发与验证.md): 运行命令, 验证证据和后续宿主验收
-
-此工程目录不是开发知识库 Vault, 不要将源码及依赖作为知识库笔记使用
-
-## 工具环境
-
-要求 Node.js 22.12.0 或更新版本, 本次在 Node.js 24.19.0 和 npm 11.17.0 下验证
-
-在本目录运行命令, 先将缓存和临时文件限制在工程内, 不使用全局安装
-
-```powershell
-$env:NODE_DISABLE_COMPILE_CACHE = '1'
-$env:TEMP = Join-Path $PWD '.cache\tmp'
-$env:TMP = $env:TEMP
-New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
-```
-
-依赖本次已经安装并锁定, 以后确需重新安装时先按项目规则确认依赖用途及影响
-
-```powershell
-npm ci --cache .cache/npm --no-audit --no-fund
-```
-
-## 检查与构建
-
-```powershell
-npm run check
-node scripts/verify.mjs
-```
-
-`check` 依次执行模块边界检查, 严格类型检查, Node 行为测试和 esbuild 打包, 测试编译及文件样例仅使用本地临时子目录并在 finally 中删除
-
-`verify` 只读检查构建入口, manifest, 运行时依赖边界及知识库导航
-
-单独命令为 `npm run check:boundaries`, `npm run typecheck`, `npm test`, `npm run build`, 源码监听使用 `npm run dev`, 监听不替代完整检查
-
-本项目不是网站, 不提供 HTTP 开发服务器, `dev` 仅监听插件构建
-
-## 宿主验证
-
-0.3.2 的复制/删除目前只通过受控测试, 未部署或执行真实回收站验收; 新版专项步骤见知识库的开发与验证, 以下 0.3.1 记录保留其原验证范围
-
-已于 2026-09-09 经用户确认, 将 0.3.1 列底部拖放修复安装到现有测试库 `C:\Users\23980\Desktop\test\test`
-
-注意有两层 test, 内层目录才包含 `.obsidian`, 不是用户最初提供的上一级文件夹
-
-已准备的内容:
-
-- `.obsidian/plugins/coffeecat-kanban/` 内有 main.js, manifest.json 和 styles.css, 三个文件的 SHA-256 与工程产物一致
-- 本轮更新前的 0.3.0 三个文件已备份到工程 `.cache/deploy-backups/2026-09-09-before-0.3.1/`, 备份哈希已核对, 更早版本的备份也保留
-- `CoffeeCatKanBan-测试/` 内有测试说明, 一个看板和三条任务, 已通过当前项目解析器检查, 无数据诊断错误
-- 本次更新前后库内 7 篇 Markdown 笔记的路径集合和 SHA-256 未变化, 保留用户已有修改, 旧测试说明仍描述 M1 流程
-- 未覆盖原有笔记, 未修改安全模式, 插件启用列表或其他宿主设置, 未启动或重启 Obsidian
-
-开始测试:
-
-1. 在 Obsidian 打开上述内层测试库, 在设置的第三方插件中按需关闭受限模式并启用 CoffeeCatKanBan
-2. 若插件列表尚未刷新, 重新打开测试库或重启 Obsidian
-3. 更新插件后先停用再启用 CoffeeCatKanBan, 按 Ctrl+P 搜索并执行打开看板, 旧页签也可点击看板图标切换
-4. 在顶部选择 CoffeeCatKanBan 测试看板, 应看到按定义分列的卡片; 数据表入口仍保留
-5. 确认版本为 0.3.1, 将任务拖到目标列添加任务按钮下方空白, 应追加到该列末尾; 再继续 M1/M2/M3 原有读写检查, 测试笔记不会随更新被覆盖
-
-用户截图已确认旧版插件加载及三条任务读取正常, 不能据此认定保存/撤销/重启恢复通过; 用户本轮同意继续 M3 第一批并保留已有未完成验收项
-
-当前工程通过 106 项受控测试, 包含排序、日期新建、撤销、关联与引用刷新回归; 不替代真实 Obsidian 的文件系统、Markdown 解析、视觉和编辑器并发验收
-
-列底部命中范围已用引用真实插件样式的 tests/fixtures/board-drop-area.html 做浏览器布局检查, 1440x900, 640x640 和 360x640 及长列表滚动场景通过, 测试页不模拟宿主数据写入, 真实 Obsidian 落点仍需重载插件后确认
-
-2026-09-10 响应式布局修复: 看板按所在页签的可用宽度自动排列, 宽空间并排, 空间不足时按列定义顺序换行, 极窄分栏使用单列, 不再强制每列至少 260px 并挤在同一行
-
-已经用户确认仅更新真实测试库的 styles.css 并重载 0.3.1, 在 Obsidian 1.13.7 的宽窗口, 原窗口, 窄窗口及 200% 缩放下核对列和控件无横向越界; 原窗口看板横向溢出从 161px 降为 0, 每列仍保留至少 96px 底部空白, 十份测试笔记及插件 JS 的 SHA-256 未改变
-
-本次响应式修复的证据与手动回退步骤见 [.cache/responsive-board-20260910/VERIFICATION.md](.cache/responsive-board-20260910/VERIFICATION.md), 旧样式保存在同目录 styles.before.css; 布局命中检查不代表 U-02/U-03 的完整拖放回归通过
-
-已观察的实际宿主为 Windows 上的 Obsidian 1.13.7, manifest 的 `minAppVersion: 1.10.0` 仍只是开发基线, 最低版本及 0.3.2 真实宿主验收尚未完成
-
-## 已知限制
-
-- 只有用户显式新建时才创建笔记或必要的文件夹, 不自动生成演示数据或改写普通笔记
-- 原型每次刷新全量读取可见 Markdown, 尚未实现增量索引及大库性能优化
-- 当前工程中显示扫描可隔离单文件读取异常, 但不完整扫描不能用于保存/创建/改列, 共用队列仍可能被慢读取延迟, 不代表完全故障隔离
-- 使用 Vault.process 和 yaml 文档树更新字段, 保留正文字节和无关属性, 含 YAML 别名的文档拒绝写入
-- YAML 不支持的值, 重复键及未知 schema 只读报错, 不自动迁移或恢复
-- 队列只约束本插件, 不保证跨文件, 跨进程或同步软件的事务; 同时复制 ID 或改看板配置仍需真宿主验证
-- 插件撤销只覆盖已支持的属性操作, 不撤销原生正文编辑或文件删除, 重启不保存撤销历史
-- 新建文件和列管理不进入属性撤销历史; 文件创建失败可能保留新建的空父目录, 不自动删除用户目录
-- 任务动作移动/完成会生成有效顺序键, 属性窗口手动改列仍沿用清除键并置末的行为; 缺键或重复键阻碍插入时会拒绝操作, 本轮没有自动重建整列顺序
-- 筛选隐藏的任务仍参与完整列位置计算, 不批量调整其顺序; 菜单上下移动指完整列中的相邻位置, 不等于跳过所有隐藏任务
-- 目标锚点在服务端扫描时核验, 源任务还在原子写入时复验, 但目标笔记和看板配置的跨文件竞争仍无全局事务保证
-- 复制/删除, 三种视图和批量完成/归档已有工程实现和受控测试, 真实宿主回收行为, 视图布局, 批量部分失败和外部竞争仍待专项验收; 自动关联/附件管理, 全局设置页及发布验证尚未完成
-
-## 产物与撤销
-
-本次创建的源码, 配置和锁文件应保留, main.js 是可重新生成的开发构建产物, `.cache/npm` 是可删除的依赖缓存
-
-取消本次工程初始化时, 先保留后续新增工作, 再删除本次新建的工程内容及根工作区新增的检查任务, 详细文档反向恢复说明见 [变更记录](../开发知识库/变更记录.md)
+MIT，见 [LICENSE](LICENSE)。打包包含 yaml 的 ISC 许可和 fractional-indexing 的 CC0-1.0 声明。

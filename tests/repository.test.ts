@@ -6,6 +6,7 @@ import { createNote, propertiesOf } from '../src/domain/markdown'
 import { readBoard, readTask } from '../src/domain/model'
 import { completionPatch, movePatch } from '../src/domain/ordering'
 import { TaskRepository, type NoteStore } from '../src/storage/repository'
+import { setImmediate as nextTurn } from 'node:timers/promises'
 
 const boardId = '8db7d248-02c7-4f1e-9e21-5a7e945d9f01'
 const taskId = 'bccfc80c-46f1-41f3-bbd5-1a643b9ad254'
@@ -79,6 +80,33 @@ class MemoryStore implements NoteStore {
     this.writes += 1
   }
 }
+
+test('large scans yield to lifecycle cancellation and queued mutations cannot write after disposal', async () => {
+  const store = new MemoryStore()
+  for (let index = 0; index < 1000; index++) store.files.set(`Ordinary-${index}.md`, 'Body')
+  const repository = new TaskRepository(store, true)
+  const scan = repository.scan()
+  const write = repository.createTask({ boardId, title: 'Must not exist', columnId: 'todo' })
+  const rejectedScan = assert.rejects(scan, /no longer active/)
+  const rejectedWrite = assert.rejects(write, /no longer active/)
+  await nextTurn()
+  repository.dispose()
+  await Promise.all([rejectedScan, rejectedWrite])
+  assert.equal(store.writes, 0)
+})
+
+test('events during cooperative scans cannot turn an old read into a reusable snapshot', async () => {
+  const store = new MemoryStore()
+  for (let index = 0; index < 1000; index++) store.files.set(`Ordinary-${index}.md`, 'Body')
+  const repository = new TaskRepository(store, true)
+  const pending = repository.scan()
+  await nextTurn()
+  store.files.set('Task.md', taskContent + 'External edit')
+  repository.invalidate('Task.md')
+  await pending
+  assert.ok((await repository.scan()).tasks[0]!.searchText!.includes('External edit'))
+  repository.dispose()
+})
 
 test('unchanged display reuses the catalogue but path changes and force refresh rebuild it', async () => {
   const store = new MemoryStore()
