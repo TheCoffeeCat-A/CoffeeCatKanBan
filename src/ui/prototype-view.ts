@@ -1,12 +1,13 @@
 import { ItemView, Notice, setIcon, type ViewStateResult, type WorkspaceLeaf } from 'obsidian'
 import type { Catalogue } from '../domain/catalogue'
 import { monthKey, parseMonthKey } from '../domain/calendar'
-import type { Task } from '../domain/model'
+import type { Board, Task } from '../domain/model'
 import { defaultQuery, queryTasks, readQuery, type TaskQuery } from '../domain/query'
-import type { TaskAction } from '../domain/task-actions'
+import type { BatchTaskAction, TaskAction } from '../domain/task-actions'
 import type { TaskFileAction } from '../domain/task-files'
 import type { KanbanService } from '../contracts'
 import { renderBoard } from './board-view'
+import { BatchActionModal } from './batch-action-modal'
 import { ColumnsModal } from './columns-modal'
 import { iconButton } from './controls'
 import { CreationModal } from './creation-modal'
@@ -14,6 +15,7 @@ import { renderCalendar } from './calendar-view'
 import { renderData } from './data-view'
 import { renderQueryBar } from './query-bar'
 import type { TaskInteraction } from './task-menu'
+import type { TaskSelection } from './task-selection'
 import { TaskPropertyModal } from './task-modal'
 import { TaskFileModal } from './task-file-modal'
 
@@ -35,6 +37,7 @@ export class PrototypeView extends ItemView {
   private pendingFocus: string | undefined
   private searchInput: HTMLInputElement | undefined
   private fileModal: TaskFileModal | undefined
+  private readonly selectedTasks = new Map<string, Task>()
 
   constructor(leaf: WorkspaceLeaf, private readonly repository: KanbanService,
     private readonly changed: () => void) {
@@ -194,6 +197,23 @@ export class PrototypeView extends ItemView {
     })
   }
 
+  // Open a guarded confirmation for the visible task selection
+  // type: (Board, readonly Task[], BatchTaskAction) => void
+  private openBatch(board: Board, tasks: readonly Task[], action: BatchTaskAction): void {
+    if (this.closed || this.acting || this.undoing || !tasks.length) return
+    this.acting = true
+    new BatchActionModal(this.app, board, tasks, action, this.repository, (report) => {
+      this.selectedTasks.clear()
+      this.acting = false
+      if (this.catalogue && !this.closed) this.render(this.catalogue)
+      this.changed()
+      this.refresh()
+      if (report.results.some((result) => result.status === 'failed')) new Notice('批量操作部分失败')
+    }, () => {
+      this.acting = false
+    }, () => !this.closed && !this.undoing).open()
+  }
+
   private render(catalogue: Catalogue): void {
     const active = this.contentEl.ownerDocument?.activeElement
     const searchFocused = Boolean(this.searchInput && active === this.searchInput)
@@ -226,7 +246,10 @@ export class PrototypeView extends ItemView {
         if (this.undoing || this.acting) return
         this.undoing = true
         undo.disabled = true
-        void this.repository.undo(board.id).then(this.changed).catch((reason: unknown) => {
+        void this.repository.undo(board.id).then((report) => {
+          this.changed()
+          if (report.results.some((result) => result.status === 'failed')) new Notice('撤销部分失败, 请重新读取后重试')
+        }).catch((reason: unknown) => {
           new Notice(reason instanceof Error ? reason.message : '撤销失败')
         }).finally(() => {
           this.undoing = false
@@ -260,6 +283,7 @@ export class PrototypeView extends ItemView {
       })
       archive.createSpan({ text: '显示归档' })
       const summary = toolbar.createSpan({ cls: 'cckb-summary', attr: { 'aria-live': 'polite' } })
+      const batchActions = toolbar.createDiv({ cls: 'cckb-batch-actions', attr: { 'aria-live': 'polite' } })
       const filters = this.contentEl.createDiv()
       this.contentEl.createEl('h2', { cls: 'cckb-board-title', text: board.title })
       const results = this.contentEl.createDiv({ cls: 'cckb-results' })
@@ -269,20 +293,46 @@ export class PrototypeView extends ItemView {
         const renderGeneration = ++this.renderGeneration
         results.empty()
         const visible = queryTasks(allTasks, board.id, this.query, this.showArchived, undefined, board.doneColumn)
+        for (const taskId of [...this.selectedTasks.keys()]) {
+          if (!visible.some((task) => task.id === taskId)) this.selectedTasks.delete(taskId)
+        }
         summary.setText(`${visible.length} / ${allTasks.length} 个任务 · ${allTasks.filter((task) => task.archived).length} 个归档`)
+        batchActions.empty()
+        if (this.selectedTasks.size) {
+          batchActions.createSpan({ cls: 'cckb-batch-count', text: `已选择 ${this.selectedTasks.size} 个` })
+          const selected = [...this.selectedTasks.values()]
+          const addBatch = (icon: string, label: string, action: BatchTaskAction): void => {
+            const button = iconButton(batchActions, icon, label, () => this.openBatch(board, selected, action))
+            button.disabled = this.acting || this.undoing
+          }
+          const completed = selected.every((task) => task.column === board.doneColumn)
+          const archived = selected.every((task) => task.archived)
+          addBatch(completed ? 'rotate-ccw' : 'check-check', completed ? '批量恢复选中任务' : '批量完成选中任务',
+            { kind: 'complete', completed: !completed })
+          addBatch(archived ? 'archive-restore' : 'archive', archived ? '批量取消归档' : '批量归档',
+            { kind: 'archive', value: !archived })
+        }
+        const selection: TaskSelection = {
+          isSelected: (taskId) => this.selectedTasks.has(taskId),
+          toggle: (task, selected) => {
+            if (selected) this.selectedTasks.set(task.id, task)
+            else this.selectedTasks.delete(task.id)
+            renderResults()
+          },
+        }
         const interaction: TaskInteraction = {
           openTask: (task) => this.openTask(task), openNote: (path) => this.openNote(path),
           act: (task, action) => this.act(task, action), manualOrder: this.query.sort === 'manual',
           fileAction: (task, action) => this.openFileTask(task, action),
           available: () => !this.closed && !this.acting && !this.undoing && renderGeneration === this.renderGeneration,
         }
-        if (this.mode === 'board') this.disposeBoard = renderBoard(results, board, visible, allTasks, interaction, (columnId) => this.createTask(columnId))
-        else if (this.mode === 'data') renderData(results, board, visible, allTasks, interaction)
+        if (this.mode === 'board') this.disposeBoard = renderBoard(results, board, visible, allTasks, interaction, (columnId) => this.createTask(columnId), selection)
+        else if (this.mode === 'data') renderData(results, board, visible, allTasks, interaction, selection)
         else renderCalendar(results, board, visible, allTasks, interaction, this.calendarMonth, (month) => {
           this.calendarMonth = month
           this.saveState()
           renderResults()
-        })
+        }, selection)
         if (this.pendingFocus && !this.acting) {
           const target = [...results.querySelectorAll<HTMLElement>('[data-task-id]')].find((element) => element.dataset.taskId === this.pendingFocus)
             target?.querySelector<HTMLButtonElement>('.cckb-task-link, .cckb-calendar-task')?.focus()

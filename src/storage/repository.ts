@@ -4,8 +4,8 @@ import { changeColumns, type ColumnAction } from '../domain/columns'
 import { applyChange, prepareChange, reverseChange, type TaskChange } from '../domain/changes'
 import { availableNotePath, newBoardNote, newTaskNote, type NewBoard, type NewTask } from '../domain/creation'
 import { parseNote, propertiesOf } from '../domain/markdown'
-import { KanbanError, readBoard, readTask, validateNotePath, type Board, type Task } from '../domain/model'
-import { assertTaskSnapshot, taskActionPatch, type TaskAction } from '../domain/task-actions'
+import { invalid, KanbanError, readBoard, readTask, validateNotePath, type Board, type Task } from '../domain/model'
+import { assertTaskSnapshot, taskActionPatch, type BatchTaskAction, type TaskAction, type TaskOperationReport, type TaskOperationResult } from '../domain/task-actions'
 import { copiedTaskNote } from '../domain/task-files'
 
 export type { NoteStore, TaskDraft } from '../contracts'
@@ -15,7 +15,7 @@ export class TaskRepository implements KanbanService {
   private queue: Promise<unknown> = Promise.resolve()
   private notes: readonly NoteSource[] = []
   private catalogue: Catalogue = buildCatalogue([])
-  private readonly history = new Map<string, TaskChange>()
+  private readonly history = new Map<string, readonly TaskChange[]>()
 
   constructor(private readonly store: NoteStore) {}
 
@@ -76,7 +76,12 @@ export class TaskRepository implements KanbanService {
       if (this.active) {
         this.notes = this.notes.filter((note) => note.path !== draft.task.path)
         this.catalogue = buildCatalogue(this.notes)
-        if (this.history.get(draft.board.id)?.taskId === draft.task.id) this.history.delete(draft.board.id)
+        const previous = this.history.get(draft.board.id)
+        if (previous) {
+          const remaining = previous.filter((change) => change.taskId !== draft.task.id)
+          if (remaining.length) this.history.set(draft.board.id, remaining)
+          else this.history.delete(draft.board.id)
+        }
       }
     })
   }
@@ -120,17 +125,93 @@ export class TaskRepository implements KanbanService {
     return this.enqueue(async () => {
       await this.load()
       const applied = await this.write(change)
-      if (applied && this.active) this.history.set(change.boardId, change)
+      if (applied && this.active) this.history.set(change.boardId, Object.freeze([change]))
     })
   }
 
-  undo(boardId: string): Promise<void> {
+  // Undo each successful field change in the most recent operation group
+  // type: (string) => Promise<TaskOperationReport>
+  undo(boardId: string): Promise<TaskOperationReport> {
     return this.enqueue(async () => {
       const previous = this.history.get(boardId)
       if (!previous) throw new KanbanError('NOT_FOUND', 'No supported operation to undo')
       await this.load()
-      await this.write(reverseChange(previous))
-      this.history.delete(boardId)
+      const results: TaskOperationResult[] = []
+      const remaining = [...previous]
+      while (remaining.length) {
+        const change = remaining.at(-1)!
+        const title = this.catalogue.tasks.find((task) => task.id === change.taskId)?.title ?? change.taskId
+        try {
+          await this.load()
+          const applied = await this.write(reverseChange(change))
+          results.push({ taskId: change.taskId, title, status: applied ? 'success' : 'skipped' })
+          remaining.pop()
+        } catch (reason) {
+          results.push({ taskId: change.taskId, title, status: 'failed', message: reason instanceof Error ? reason.message : '撤销失败' })
+          for (const pending of remaining.slice(0, -1).reverse()) {
+            results.push({ taskId: pending.taskId,
+              title: this.catalogue.tasks.find((task) => task.id === pending.taskId)?.title ?? pending.taskId,
+              status: 'not-executed', message: '前一项失败, 未执行' })
+          }
+          break
+        }
+      }
+      if (remaining.length && this.active) this.history.set(boardId, Object.freeze(remaining))
+      else this.history.delete(boardId)
+      return Object.freeze({ results: Object.freeze(results) })
+    })
+  }
+
+  // Apply one safe action to each selected task until the first failure
+  // type: (string, readonly Task[], BatchTaskAction, AbortSignal?) => Promise<TaskOperationReport>
+  batchActOnTasks(boardId: string, expected: readonly Task[], action: BatchTaskAction, signal?: AbortSignal): Promise<TaskOperationReport> {
+    const snapshots = expected.map((task) => Object.freeze({ ...task }))
+    const command = Object.freeze({ ...action })
+    return this.enqueue(async () => {
+      if (!snapshots.length || new Set(snapshots.map((task) => task.id)).size !== snapshots.length
+        || snapshots.some((task) => task.boardId !== boardId)) invalid('Select distinct tasks from one board')
+      if (!((command.kind === 'complete' && typeof command.completed === 'boolean')
+        || (command.kind === 'archive' && typeof command.value === 'boolean'))) invalid('Unsupported batch action')
+      const results: TaskOperationResult[] = []
+      const changes: TaskChange[] = []
+      for (let index = 0; index < snapshots.length; index += 1) {
+        const snapshot = snapshots[index]!
+        let submitting = false
+        try {
+          if (signal?.aborted) throw new KanbanError('INACTIVE', 'Batch cancelled before submission')
+          await this.load()
+          if (signal?.aborted) throw new KanbanError('INACTIVE', 'Batch cancelled before submission')
+          const draft = this.locate(snapshot.id)
+          assertTaskSnapshot(snapshot, draft.task, command)
+          const patch = taskActionPatch(this.catalogue.tasks, draft.task, draft.board, command)
+          const change = prepareChange(draft.content, patch)
+          if (!change.fields.length) {
+            results.push({ taskId: snapshot.id, title: snapshot.title, status: 'skipped', message: '任务已经处于目标状态' })
+            continue
+          }
+          const applied = await this.write(change, (current) => {
+            if (signal?.aborted) throw new KanbanError('INACTIVE', 'Batch cancelled before submission')
+            assertTaskSnapshot(snapshot, readTask(propertiesOf(current), draft.task.path), command)
+            submitting = true
+          })
+          if (applied) {
+            changes.push(change)
+            results.push({ taskId: snapshot.id, title: snapshot.title, status: 'success' })
+          } else {
+            results.push({ taskId: snapshot.id, title: snapshot.title, status: 'skipped', message: '任务没有发生变化' })
+          }
+        } catch (reason) {
+          const cancelled = signal?.aborted && !submitting
+          results.push({ taskId: snapshot.id, title: snapshot.title, status: cancelled ? 'not-executed' : 'failed',
+            message: reason instanceof Error ? reason.message : '批量操作失败' })
+          for (const remaining of snapshots.slice(index + 1)) {
+            results.push({ taskId: remaining.id, title: remaining.title, status: 'not-executed', message: cancelled ? '操作已停止' : '前一项失败, 未执行' })
+          }
+          break
+        }
+      }
+      if (changes.length && this.active) this.history.set(boardId, Object.freeze(changes))
+      return Object.freeze({ results: Object.freeze(results) })
     })
   }
 
@@ -144,7 +225,7 @@ export class TaskRepository implements KanbanService {
       const applied = await this.write(change, (current) => {
         assertTaskSnapshot(expected, readTask(propertiesOf(current), draft.task.path), action)
       })
-      if (applied && this.active) this.history.set(change.boardId, change)
+        if (applied && this.active) this.history.set(change.boardId, Object.freeze([change]))
     })
   }
 

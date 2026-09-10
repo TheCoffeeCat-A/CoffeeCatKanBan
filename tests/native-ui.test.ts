@@ -382,6 +382,42 @@ test('native board groups cards, toggles archived tasks and preserves data-view 
   assert.ok(stateSaves >= 3)
 })
 
+test('batch actions use only visible selections and clear them after confirmation', async () => {
+  const first = taskFixture('first')
+  const second = { ...taskFixture('second', 'doing'), archived: true }
+  const selected: { boardId: string; tasks: readonly Task[]; action: TaskAction }[] = []
+  const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, {
+    scan: async () => ({ boards: [board], tasks: [first, second], diagnostics: [] }), hasUndo: () => false,
+    batchActOnTasks: async (boardId: string, tasks: readonly Task[], action: TaskAction) => {
+      selected.push({ boardId, tasks, action })
+      return { results: tasks.map((task) => ({ taskId: task.id, title: task.title, status: 'success' as const })) }
+    },
+  }, () => undefined)
+  await view.onOpen()
+  await nextTurn()
+  const firstSelect = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '选择任务: first')!
+  firstSelect.checked = true
+  firstSelect.listeners.get('change')!()
+  assert.equal(view.contentEl.descendants().filter((element) => element.attributes.get('aria-label')?.startsWith('选择任务:')).length, 1)
+  const batch = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '批量完成选中任务')!
+  batch.listeners.get('click')!({})
+  const modal = ModalStub.last!
+  assert.equal(modal.titleEl.textContent, '标记完成')
+  assert.ok(modal.contentEl.descendants().some((element) => element.textContent === 'first'))
+  button(modal, '标记完成').action()
+  await nextTurn()
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0]!.boardId, board.id)
+  assert.deepEqual(selected[0]!.tasks.map((task) => task.id), ['first'])
+  assert.deepEqual(selected[0]!.action, { kind: 'complete', completed: true })
+  assert.equal(view.contentEl.descendants().filter((element) => element.attributes.get('aria-label') === '选择任务: first')
+    .some((element) => element.checked), false)
+  assert.equal(button(modal, '关闭').disabled, false)
+  button(modal, '关闭').action()
+  assert.equal(modal.closed, true)
+  await view.onClose()
+})
+
 test('calendar view keeps dated and undated tasks visible and persists month navigation', async () => {
   const tasks: Task[] = [
     { ...taskFixture('in-month'), due: '2026-09-10', priority: true },

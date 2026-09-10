@@ -3,7 +3,7 @@ import type { TaskChange } from './domain/changes'
 import type { ColumnAction } from './domain/columns'
 import type { NewBoard, NewTask } from './domain/creation'
 import type { Board, Task } from './domain/model'
-import type { TaskAction } from './domain/task-actions'
+import type { BatchTaskAction, TaskAction, TaskOperationReport } from './domain/task-actions'
 
 export interface NoteStore {
   listPaths(): readonly string[]
@@ -29,6 +29,7 @@ export interface KanbanService {
   editColumns(expected: Board, action: ColumnAction): Promise<Board>
   commit(change: TaskChange): Promise<void>
   actOnTask(expected: Task, action: TaskAction): Promise<void>
-  undo(boardId: string): Promise<void>
+  batchActOnTasks(boardId: string, expected: readonly Task[], action: BatchTaskAction, signal?: AbortSignal): Promise<TaskOperationReport>
+  undo(boardId: string): Promise<TaskOperationReport>
   hasUndo(boardId: string): boolean
 }

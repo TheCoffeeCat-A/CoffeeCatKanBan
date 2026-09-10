@@ -3,13 +3,15 @@ import type { Board, Task } from '../domain/model'
 import type { BoardDrag } from './board-drag'
 import { iconButton } from './controls'
 import { showTaskMenu, type TaskInteraction } from './task-menu'
+import { selectionCheckbox, type TaskSelection } from './task-selection'
 
 export function renderTaskCard(container: HTMLElement, task: Task, board: Board, allTasks: readonly Task[],
-  interaction: TaskInteraction, drag: BoardDrag): void {
+  interaction: TaskInteraction, drag: BoardDrag, selection: TaskSelection): void {
   const card = container.createEl('article', { cls: 'cckb-card', attr: { 'data-task-id': task.id } })
   if (task.column === board.doneColumn) card.addClass('cckb-card-complete')
   if (task.archived) card.addClass('cckb-card-archived')
   const heading = card.createDiv({ cls: 'cckb-card-heading' })
+  selectionCheckbox(heading, task, selection)
   const complete = iconButton(heading, task.column === board.doneColumn ? 'square-check' : 'square',
     `${task.column === board.doneColumn ? '恢复' : '完成'}: ${task.title}`, () => {
       if (interaction.available()) interaction.act(task, { kind: 'complete', completed: task.column !== board.doneColumn })

@@ -566,6 +566,144 @@ test('task actions keep strict read requirements and persistence failures do not
   assert.equal(store.files.get('Task.md'), taskContent)
 })
 
+test('batch actions apply to selected tasks and undo the successful group together', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  const selected = [(await repository.draft(taskId)).task, (await repository.draft(second.id)).task]
+  const report = await repository.batchActOnTasks(boardId, selected, { kind: 'archive', value: true })
+  assert.deepEqual(report.results.map((result) => result.status), ['success', 'success'])
+  assert.equal((await repository.draft(taskId)).task.archived, true)
+  assert.equal((await repository.draft(second.id)).task.archived, true)
+  const undo = await repository.undo(boardId)
+  assert.deepEqual(undo.results.map((result) => result.status), ['success', 'success'])
+  assert.equal((await repository.draft(taskId)).task.archived, false)
+  assert.equal((await repository.draft(second.id)).task.archived, false)
+  assert.equal(repository.hasUndo(boardId), false)
+})
+
+test('batch actions stop at the first failure and retain only successful undo entries', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  const third = await repository.createTask({ boardId, title: 'Third' })
+  const selected = [(await repository.draft(taskId)).task, (await repository.draft(second.id)).task, (await repository.draft(third.id)).task]
+  store.beforeProcess = async () => {
+    if (store.writes >= 3) store.fail = true
+  }
+  const report = await repository.batchActOnTasks(boardId, selected, { kind: 'archive', value: true })
+  assert.deepEqual(report.results.map((result) => result.status), ['success', 'failed', 'not-executed'])
+  assert.equal((await repository.draft(taskId)).task.archived, true)
+  assert.equal((await repository.draft(second.id)).task.archived, false)
+  assert.equal((await repository.draft(third.id)).task.archived, false)
+  store.fail = false
+  store.beforeProcess = undefined
+  const undo = await repository.undo(boardId)
+  assert.deepEqual(undo.results.map((result) => result.status), ['success'])
+  assert.equal((await repository.draft(taskId)).task.archived, false)
+  assert.equal(repository.hasUndo(boardId), false)
+})
+
+test('batch completion restores original columns and leaves unselected notes unchanged', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second', columnId: 'doing' })
+  const hidden = await repository.createTask({ boardId, title: 'Hidden' })
+  const hiddenContent = store.files.get(hidden.path)
+  const source = (await repository.draft(taskId)).task
+  const completed = await repository.batchActOnTasks(boardId, [source, second], { kind: 'complete', completed: true })
+  assert.deepEqual(completed.results.map((result) => result.status), ['success', 'success'])
+  const firstDone = (await repository.draft(taskId)).task
+  const secondDone = (await repository.draft(second.id)).task
+  assert.notEqual(firstDone.order, secondDone.order)
+  const restored = await repository.batchActOnTasks(boardId, [firstDone, secondDone], { kind: 'complete', completed: false })
+  assert.deepEqual(restored.results.map((result) => result.status), ['success', 'success'])
+  assert.equal((await repository.draft(taskId)).task.column, 'todo')
+  assert.equal((await repository.draft(second.id)).task.column, 'doing')
+  assert.equal(store.files.get(hidden.path), hiddenContent)
+})
+
+test('batch rejects duplicate and foreign targets before writing and preserves old undo', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const source = (await repository.draft(taskId)).task
+  await repository.actOnTask(source, { kind: 'priority', value: true })
+  const writes = store.writes
+  await assert.rejects(repository.batchActOnTasks(boardId, [source, source], { kind: 'archive', value: true }), /distinct tasks/)
+  await assert.rejects(repository.batchActOnTasks(boardId, [source, { ...source, id: 'other', boardId: 'other' }],
+    { kind: 'archive', value: true }), /distinct tasks/)
+  assert.equal(store.writes, writes)
+  await repository.undo(boardId)
+  assert.equal((await repository.draft(taskId)).task.priority, false)
+})
+
+test('batch stops for stale targets and rechecks strict reads between submissions', async () => {
+  for (const failure of ['snapshot', 'read']) {
+    const store = new MemoryStore()
+    const repository = new TaskRepository(store)
+    const second = await repository.createTask({ boardId, title: 'Second' })
+    const source = (await repository.draft(taskId)).task
+    store.beforeProcess = async () => {
+      store.beforeProcess = undefined
+      if (failure === 'snapshot') store.files.set(second.path, createNote({ ...propertiesOf(store.files.get(second.path)!), kanban_column: 'doing' }))
+      else store.unreadable.add(second.path)
+    }
+    const report = await repository.batchActOnTasks(boardId, [source, second], { kind: 'archive', value: true })
+    assert.deepEqual(report.results.map((result) => result.status), ['success', 'failed'])
+    store.unreadable.clear()
+    assert.equal((await repository.draft(second.id)).task.archived, false)
+    await repository.undo(boardId)
+    assert.equal((await repository.draft(taskId)).task.archived, false)
+  }
+})
+
+test('batch cancellation at the atomic callback prevents remaining writes', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  const source = (await repository.draft(taskId)).task
+  const controller = new AbortController()
+  const writes = store.writes
+  store.beforeProcess = async () => { controller.abort() }
+  const report = await repository.batchActOnTasks(boardId, [source, second], { kind: 'archive', value: true }, controller.signal)
+  assert.deepEqual(report.results.map((result) => result.status), ['not-executed', 'not-executed'])
+  assert.equal(store.writes, writes)
+  assert.equal(repository.hasUndo(boardId), false)
+})
+
+test('partial group undo preserves a conflicting field and retries only remaining changes', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  const third = await repository.createTask({ boardId, title: 'Third' })
+  const source = (await repository.draft(taskId)).task
+  await repository.batchActOnTasks(boardId, [source, second, third], { kind: 'archive', value: true })
+  const conflict = createNote({ ...propertiesOf(store.files.get(second.path)!), kanban_archived: false }, 'External body\n')
+  store.files.set(second.path, conflict)
+  const report = await repository.undo(boardId)
+  assert.deepEqual(report.results.map((result) => result.status), ['success', 'failed', 'not-executed'])
+  assert.equal(store.files.get(second.path), conflict)
+  assert.equal((await repository.draft(taskId)).task.archived, true)
+  assert.equal((await repository.draft(third.id)).task.archived, false)
+  assert.equal(repository.hasUndo(boardId), true)
+  store.files.set(second.path, createNote({ ...propertiesOf(conflict), kanban_archived: true }, 'External body\n'))
+  const retried = await repository.undo(boardId)
+  assert.deepEqual(retried.results.map((result) => result.taskId), [second.id, taskId])
+  assert.equal(store.files.get(second.path)!.endsWith('External body\n'), true)
+  assert.equal(repository.hasUndo(boardId), false)
+})
+
+test('deleting a task removes only its entry from a batch undo group', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  await repository.batchActOnTasks(boardId, [(await repository.draft(taskId)).task, second], { kind: 'archive', value: true })
+  await repository.deleteTask(await repository.draft(second.id))
+  const undo = await repository.undo(boardId)
+  assert.deepEqual(undo.results.map((result) => result.taskId), [taskId])
+  assert.equal((await repository.draft(taskId)).task.archived, false)
+})
+
 test('completion never guesses invalid restore targets or silently repairs missing neighbour keys', async () => {
   const store = new MemoryStore()
   const repository = new TaskRepository(store)

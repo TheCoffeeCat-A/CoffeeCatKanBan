@@ -1,8 +1,9 @@
 import type { Board, Task } from '../domain/model'
 import { iconButton } from './controls'
 import { showTaskMenu, type TaskInteraction } from './task-menu'
+import { selectionCheckbox, type TaskSelection } from './task-selection'
 
-export function renderData(container: HTMLElement, board: Board, visible: readonly Task[], allTasks: readonly Task[], interaction: TaskInteraction): void {
+export function renderData(container: HTMLElement, board: Board, visible: readonly Task[], allTasks: readonly Task[], interaction: TaskInteraction, selection: TaskSelection): void {
   const wrapper = container.createDiv({ cls: 'cckb-data-scroll' })
   const table = wrapper.createEl('table', { cls: 'cckb-table' })
   const heading = table.createEl('thead').createEl('tr')
@@ -10,7 +11,9 @@ export function renderData(container: HTMLElement, board: Board, visible: readon
   const body = table.createEl('tbody')
   for (const task of visible) {
     const row = body.createEl('tr', { attr: { 'data-task-id': task.id } })
-    const button = row.createEl('td').createEl('button', { cls: 'cckb-task-link', text: task.title })
+    const taskCell = row.createEl('td')
+    selectionCheckbox(taskCell, task, selection)
+    const button = taskCell.createEl('button', { cls: 'cckb-task-link', text: task.title })
     button.addEventListener('click', () => interaction.openTask(task))
     row.createEl('td', { text: board.columns.find((column) => column.id === task.column)?.title ?? task.column })
     row.createEl('td', { text: task.due ?? '' })

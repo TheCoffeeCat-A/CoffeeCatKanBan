@@ -8,6 +8,23 @@ export type TaskAction =
   | { readonly kind: 'complete'; readonly completed: boolean }
   | { readonly kind: 'priority' | 'archive'; readonly value: boolean }
 
+export type BatchTaskAction =
+  | { readonly kind: 'complete'; readonly completed: boolean }
+  | { readonly kind: 'archive'; readonly value: boolean }
+
+export type TaskOperationStatus = 'success' | 'skipped' | 'failed' | 'not-executed'
+
+export interface TaskOperationResult {
+  readonly taskId: string
+  readonly title: string
+  readonly status: TaskOperationStatus
+  readonly message?: string
+}
+
+export interface TaskOperationReport {
+  readonly results: readonly TaskOperationResult[]
+}
+
 export function assertTaskSnapshot(expected: Task, current: Task, action: TaskAction): void {
   if (expected.id !== current.id || expected.boardId !== current.boardId
     || expected.column !== current.column || expected.order !== current.order || expected.archived !== current.archived

@@ -126,6 +126,23 @@
   color: var(--text-muted);
 }
 
+.cckb-prototype .cckb-batch-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+
+.cckb-prototype .cckb-batch-count {
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.cckb-prototype .cckb-task-select {
+  flex: 0 0 auto;
+  margin: 0 var(--size-4-1) 0 0;
+}
+
 .cckb-prototype .cckb-board-title {
   font-size: var(--font-ui-large);
   line-height: 1.4;
@@ -428,6 +445,16 @@
   margin-top: var(--size-4-1);
 }
 
+.cckb-prototype .cckb-calendar-task-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.cckb-prototype .cckb-calendar-task-row .cckb-task-select {
+  margin-right: var(--size-4-1);
+}
+
 .cckb-prototype .cckb-calendar-task {
   display: flex;
   align-items: center;
@@ -486,4 +513,15 @@
 
 .cckb-prototype .cckb-calendar-unplaced .cckb-calendar-task {
   max-width: 520px;
+}
+
+.cckb-prototype .cckb-batch-task-list,
+.cckb-prototype .cckb-batch-report ul {
+  max-height: 240px;
+  overflow: auto;
+  padding-inline-start: var(--size-4-5);
+}
+
+.cckb-prototype .cckb-batch-report {
+  margin-top: var(--size-4-3);
 }

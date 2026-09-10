@@ -3,9 +3,10 @@ import type { Board, Task } from '../domain/model'
 import { calendarMonth, shiftMonth } from '../domain/calendar'
 import { iconButton } from './controls'
 import { showTaskMenu, type TaskInteraction } from './task-menu'
+import { selectionCheckbox, type TaskSelection } from './task-selection'
 
 export function renderCalendar(container: HTMLElement, board: Board, visible: readonly Task[], allTasks: readonly Task[],
-  interaction: TaskInteraction, monthValue: string, changeMonth: (month: string) => void): void {
+  interaction: TaskInteraction, monthValue: string, changeMonth: (month: string) => void, selection: TaskSelection): void {
   const month = calendarMonth(monthValue)
   const scroll = container.createDiv({ cls: 'cckb-data-scroll' })
   const wrapper = scroll.createDiv({ cls: 'cckb-calendar' })
@@ -38,7 +39,7 @@ export function renderCalendar(container: HTMLElement, board: Board, visible: re
     day.createEl('time', { text: String(cell.day), attr: { datetime: cell.date } })
     const tasks = day.createDiv({ cls: 'cckb-calendar-tasks' })
     if (cell.inMonth) {
-      for (const task of byDate.get(cell.date) ?? []) renderCalendarTask(tasks, task, board, allTasks, interaction)
+      for (const task of byDate.get(cell.date) ?? []) renderCalendarTask(tasks, task, board, allTasks, interaction, selection)
     }
   }
 
@@ -46,12 +47,14 @@ export function renderCalendar(container: HTMLElement, board: Board, visible: re
   if (unplaced.length) {
     const list = wrapper.createDiv({ cls: 'cckb-calendar-unplaced' })
     list.createEl('h3', { text: '本月之外或无日期' })
-    for (const task of unplaced) renderCalendarTask(list, task, board, allTasks, interaction)
+      for (const task of unplaced) renderCalendarTask(list, task, board, allTasks, interaction, selection)
   }
 }
 
-function renderCalendarTask(container: HTMLElement, task: Task, board: Board, allTasks: readonly Task[], interaction: TaskInteraction): void {
-  const button = container.createEl('button', { cls: `cckb-calendar-task${task.priority ? ' cckb-calendar-task-priority' : ''}${task.archived ? ' cckb-calendar-task-archived' : ''}`, attr: { type: 'button', 'aria-label': task.title, title: task.title, 'data-task-id': task.id } })
+function renderCalendarTask(container: HTMLElement, task: Task, board: Board, allTasks: readonly Task[], interaction: TaskInteraction, selection: TaskSelection): void {
+  const row = container.createDiv({ cls: 'cckb-calendar-task-row' })
+  selectionCheckbox(row, task, selection)
+  const button = row.createEl('button', { cls: `cckb-calendar-task${task.priority ? ' cckb-calendar-task-priority' : ''}${task.archived ? ' cckb-calendar-task-archived' : ''}`, attr: { type: 'button', 'aria-label': task.title, title: task.title, 'data-task-id': task.id } })
   if (task.priority) setIcon(button.createSpan({ cls: 'cckb-calendar-task-icon' }), 'flag')
   button.createSpan({ text: task.title })
   button.addEventListener('click', () => {
