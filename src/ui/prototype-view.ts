@@ -1,5 +1,6 @@
 import { ItemView, Notice, setIcon, type ViewStateResult, type WorkspaceLeaf } from 'obsidian'
 import type { Catalogue } from '../domain/catalogue'
+import { monthKey, parseMonthKey } from '../domain/calendar'
 import type { Task } from '../domain/model'
 import { defaultQuery, queryTasks, readQuery, type TaskQuery } from '../domain/query'
 import type { TaskAction } from '../domain/task-actions'
@@ -9,6 +10,7 @@ import { renderBoard } from './board-view'
 import { ColumnsModal } from './columns-modal'
 import { iconButton } from './controls'
 import { CreationModal } from './creation-modal'
+import { renderCalendar } from './calendar-view'
 import { renderData } from './data-view'
 import { renderQueryBar } from './query-bar'
 import type { TaskInteraction } from './task-menu'
@@ -19,7 +21,8 @@ export const PROTOTYPE_VIEW = 'coffeecat-kanban-prototype'
 
 export class PrototypeView extends ItemView {
   private boardId = ''
-  private mode: 'board' | 'data' = 'board'
+  private mode: 'board' | 'data' | 'calendar' = 'board'
+  private calendarMonth = monthKey()
   private showArchived = false
   private closed = true
   private generation = 0
@@ -43,7 +46,7 @@ export class PrototypeView extends ItemView {
   override getIcon(): string { return 'columns-3' }
 
   override getState(): Record<string, unknown> {
-    return { boardId: this.boardId, mode: this.mode, showArchived: this.showArchived, query: this.query }
+    return { boardId: this.boardId, mode: this.mode, calendarMonth: this.calendarMonth, showArchived: this.showArchived, query: this.query }
   }
 
   override async setState(state: unknown, result: ViewStateResult): Promise<void> {
@@ -51,7 +54,10 @@ export class PrototypeView extends ItemView {
       this.boardId = state.boardId
     }
     if (state && typeof state === 'object') {
-      if ('mode' in state) this.mode = state.mode === 'data' ? 'data' : 'board'
+      if ('mode' in state) this.mode = state.mode === 'data' ? 'data' : state.mode === 'calendar' ? 'calendar' : 'board'
+      if ('calendarMonth' in state && typeof state.calendarMonth === 'string' && parseMonthKey(state.calendarMonth)) {
+        this.calendarMonth = state.calendarMonth
+      }
       if ('showArchived' in state) this.showArchived = state.showArchived === true
       if ('query' in state) this.query = readQuery(state.query)
     }
@@ -235,8 +241,9 @@ export class PrototypeView extends ItemView {
       const allTasks = catalogue.tasks.filter((task) => task.boardId === board.id)
       const toolbar = this.contentEl.createDiv({ cls: 'cckb-view-toolbar' })
       const tabs = toolbar.createDiv({ cls: 'cckb-view-tabs', attr: { role: 'group', 'aria-label': '显示方式' } })
-      for (const mode of ['board', 'data'] as const) {
-        const button = iconButton(tabs, mode === 'board' ? 'columns-3' : 'table-2', mode === 'board' ? '看板' : '数据表', () => {
+      for (const mode of ['board', 'data', 'calendar'] as const) {
+        const button = iconButton(tabs, mode === 'board' ? 'columns-3' : mode === 'data' ? 'table-2' : 'calendar-days',
+          mode === 'board' ? '看板' : mode === 'data' ? '数据表' : '月历', () => {
           this.mode = mode
           this.saveState()
           this.render(catalogue)
@@ -270,10 +277,15 @@ export class PrototypeView extends ItemView {
           available: () => !this.closed && !this.acting && !this.undoing && renderGeneration === this.renderGeneration,
         }
         if (this.mode === 'board') this.disposeBoard = renderBoard(results, board, visible, allTasks, interaction, (columnId) => this.createTask(columnId))
-        else renderData(results, board, visible, allTasks, interaction)
+        else if (this.mode === 'data') renderData(results, board, visible, allTasks, interaction)
+        else renderCalendar(results, board, visible, allTasks, interaction, this.calendarMonth, (month) => {
+          this.calendarMonth = month
+          this.saveState()
+          renderResults()
+        })
         if (this.pendingFocus && !this.acting) {
           const target = [...results.querySelectorAll<HTMLElement>('[data-task-id]')].find((element) => element.dataset.taskId === this.pendingFocus)
-          target?.querySelector<HTMLButtonElement>('.cckb-task-link')?.focus()
+            target?.querySelector<HTMLButtonElement>('.cckb-task-link, .cckb-calendar-task')?.focus()
           this.pendingFocus = undefined
         }
       }

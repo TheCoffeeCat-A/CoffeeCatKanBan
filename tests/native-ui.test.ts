@@ -377,7 +377,39 @@ test('native board groups cards, toggles archived tasks and preserves data-view 
   table.listeners.get('click')!()
   assert.equal(view.getState().mode, 'data')
   assert.equal(view.contentEl.descendants().filter((entry) => entry.tagName === 'table').length, 1)
+  assert.deepEqual(view.contentEl.descendants().filter((entry) => entry.tagName === 'th').map((entry) => entry.textContent),
+    ['任务', '状态', '截止日期', '优先级', '标签', '负责人', '归档', '操作'])
   assert.ok(stateSaves >= 3)
+})
+
+test('calendar view keeps dated and undated tasks visible and persists month navigation', async () => {
+  const tasks: Task[] = [
+    { ...taskFixture('in-month'), due: '2026-09-10', priority: true },
+    { ...taskFixture('next-month'), due: '2026-10-01' },
+    taskFixture('undated'),
+  ]
+  const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, {
+    scan: async () => ({ boards: [board], tasks, diagnostics: [] }), hasUndo: () => false,
+    draft: async (id: string) => ({ task: tasks.find((task) => task.id === id)!, board, content: '# Body' }),
+  }, () => undefined)
+  await view.onOpen()
+  await view.setState({ boardId: board.id, mode: 'calendar', calendarMonth: '2026-09' }, {})
+  await nextTurn()
+  assert.equal(view.getState().mode, 'calendar')
+  assert.equal(view.getState().calendarMonth, '2026-09')
+  assert.equal(view.contentEl.descendants().filter((entry) => entry.attributes.get('role') === 'gridcell').length, 42)
+  assert.equal(view.contentEl.descendants().filter((entry) => entry.attributes.get('aria-label') === 'in-month').length, 1)
+    const taskButton = view.contentEl.descendants().find((entry) => entry.attributes.get('aria-label') === 'in-month')!
+    taskButton.listeners.get('click')!()
+  assert.equal(view.contentEl.descendants().filter((entry) => entry.attributes.get('aria-label') === 'next-month').length, 1)
+  assert.equal(view.contentEl.descendants().filter((entry) => entry.attributes.get('aria-label') === 'undated').length, 1)
+  const next = view.contentEl.descendants().find((entry) => entry.attributes.get('aria-label') === '下一个月')!
+  next.listeners.get('click')!({})
+  assert.equal(view.getState().calendarMonth, '2026-10')
+  const grid = view.contentEl.descendants().find((entry) => entry.attributes.get('role') === 'grid')!
+  assert.equal(grid.descendants().filter((entry) => entry.attributes.get('aria-label') === 'in-month').length, 0)
+  assert.equal(grid.descendants().filter((entry) => entry.attributes.get('aria-label') === 'next-month').length, 1)
+  await view.onClose()
 })
 
 test('a closed native view ignores an outstanding asynchronous catalogue result', async () => {
