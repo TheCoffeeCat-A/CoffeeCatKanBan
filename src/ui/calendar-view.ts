@@ -32,11 +32,11 @@ export function renderCalendar(container: HTMLElement, board: Board, visible: re
   }
   const grid = wrapper.createDiv({ cls: 'cckb-calendar-grid', attr: { role: 'grid', 'aria-label': month.title } })
   for (const weekday of ['一', '二', '三', '四', '五', '六', '日']) {
-    grid.createEl('div', { cls: 'cckb-calendar-weekday', text: weekday, attr: { role: 'columnheader' } })
+    grid.createDiv({ cls: 'cckb-calendar-weekday', text: weekday, attr: { role: 'columnheader' } })
   }
   const today = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
   for (const cell of month.cells) {
-    const day = grid.createEl('div', { cls: `cckb-calendar-day${cell.inMonth ? '' : ' cckb-calendar-day-outside'}${cell.date === today ? ' cckb-calendar-day-today' : ''}`, attr: { role: 'gridcell', 'aria-label': cell.date } })
+    const day = grid.createDiv({ cls: `cckb-calendar-day${cell.inMonth ? '' : ' cckb-calendar-day-outside'}${cell.date === today ? ' cckb-calendar-day-today' : ''}`, attr: { role: 'gridcell', 'aria-label': cell.date } })
     day.createEl('time', { text: String(cell.day), attr: { datetime: cell.date } })
     iconButton(day, 'plus', `新建任务: ${cell.date}`, () => {
       if (interaction.available()) createTask(cell.date)

@@ -32,7 +32,7 @@ export class TaskFileModal extends Modal {
       button.setButtonText('\u53d6\u6d88').onClick(() => this.close())
     }).addButton((button) => {
       button.setButtonText(deleting ? '\u5220\u9664\u6574\u7bc7\u7b14\u8bb0' : '\u786e\u8ba4\u590d\u5236')
-      if (deleting) button.setWarning()
+      if (deleting) button.setClass('mod-warning')
       else button.setCta()
       button.onClick(() => {
         if (this.saving || !this.live) return

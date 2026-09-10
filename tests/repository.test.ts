@@ -80,6 +80,24 @@ class MemoryStore implements NoteStore {
   }
 }
 
+test('unchanged display reuses the catalogue but path changes and force refresh rebuild it', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store, true)
+  const first = await repository.scan()
+  assert.equal(await repository.scan(), first)
+  store.files.set('Ordinary.md', 'Body')
+  const added = await repository.scan()
+  assert.notEqual(added, first)
+  assert.equal(await repository.scan(), added)
+  store.files.delete('Task.md')
+  const removed = await repository.scan()
+  assert.equal(removed.tasks.length, 0)
+  assert.notEqual(removed, added)
+  assert.notEqual(await repository.scan(true), removed)
+  repository.dispose()
+  await assert.rejects(repository.scan())
+})
+
 test('incremental display rereads changed notes only, retries failures and forces full write checks', async () => {
   const store = new MemoryStore()
   let reads = 0

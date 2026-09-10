@@ -367,7 +367,7 @@ export class PrototypeView extends ItemView {
       details.createEl('summary', { text: `数据问题 (${catalogue.diagnostics.length})` })
       for (const diagnostic of catalogue.diagnostics) {
         const row = details.createDiv({ cls: 'cckb-diagnostic' })
-        row.createEl('span', { text: `${diagnostic.path}: ${diagnostic.message}` })
+        row.createSpan({ text: `${diagnostic.path}: ${diagnostic.message}` })
         iconButton(row, 'file-text', '打开原笔记', () => this.openNote(diagnostic.path))
       }
     }

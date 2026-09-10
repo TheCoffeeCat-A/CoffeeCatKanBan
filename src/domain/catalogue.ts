@@ -49,10 +49,11 @@ export function buildCatalogue(notes: readonly NoteSource[], parsedNotes?: WeakM
     return false
   })
   const boards = unique.filter((candidate): candidate is Board => 'columns' in candidate)
+  const boardsById = new Map(boards.map((board) => [board.id, board]))
   const tasks: Task[] = []
   for (const candidate of unique) {
     if (!('boardId' in candidate)) continue
-    const board = boards.find((entry) => entry.id === candidate.boardId)
+    const board = boardsById.get(candidate.boardId)
     try {
       if (!board) throw new Error('Unknown or conflicting board')
       assertMembership(candidate, board)

@@ -1,5 +1,38 @@
 # CoffeeCatKanBan
 
+Native Markdown task boards for Obsidian: board, data table and month calendar views rendered from plain Markdown notes, with guarded task actions, drag ordering and search filters.
+
+## Installation
+
+CoffeeCatKanBan is not in the community plugin directory yet, so install it manually.
+
+1. Download `main.js`, `manifest.json` and `styles.css` from the newest [release](https://github.com/TheCoffeeCat-A/CoffeeCatKanBan/releases).
+2. Put the three files in `<your vault>/.obsidian/plugins/coffeecat-kanban/`.
+3. Reload Obsidian, then enable **CoffeeCatKanBan** under Settings → Community plugins (turn off Restricted mode first).
+4. Desktop only, Obsidian 1.10.0 or later. The plugin interface is currently in Chinese.
+
+## Usage
+
+- Open the plugin from the ribbon icon or from the command palette (打开看板 / open board). With a single valid board it is selected automatically.
+- The folder button in the toolbar creates a board. Both the board folder and the folder for new task notes are relative to the vault root.
+- The new task buttons and the column `+` create one Markdown note per task, with a generated ID and a file name that does not overwrite existing notes.
+- Cards can be completed or restored, moved between columns, archived, reordered by dragging the handle, or edited through the card menu (priority, column, tags, assignees).
+- The toolbar switches between the board, the data table and the month calendar. The calendar grid also creates tasks with the due date pre-filled.
+- Search matches titles, tags, assignees and note text. Filters cover status, tags, high priority and dates, and are kept per tab.
+- Repair column order previews a full column, including hidden and archived tasks, and only rewrites order keys after confirmation.
+- An existing Markdown note can be added to a board from the file context menu. The note is converted in place, without moving or copying the file.
+- Copying a task creates an independent note in the same folder and column. Deleting a note asks for confirmation first and follows Obsidian's trash setting.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
+
+---
+
+## 中文说明
+
+2026-09-10 性能增量: 无文件事件且路径列表未变化时复用显示目录快照, 读取失败不缓存快照, 强制刷新/严格读取继续失效缓存。任务所属看板通过 ID 映射查找。新增 100 看板/5000 任务的内存基线, 断言重复刷新零读取、单文件更新一次读取及内容一致; 不代表真实磁盘或 UI 性能, 未增加虚拟列表
+
 ## 2026-09-10 当前增量
 
 最终工程验证: 124 项受控测试、38 模块边界、严格类型检查、构建及文档校验通过; 不替代真实 Obsidian 验收

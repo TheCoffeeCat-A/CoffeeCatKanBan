@@ -56,10 +56,14 @@ export function isIsoDate(value: unknown): value is string {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
+export function hasControlCharacter(value: string): boolean {
+  return Array.from(value).some((char) => char.charCodeAt(0) < 0x20)
+}
+
 export function validateFolder(path: string): string {
   if (path === '') return path
-  if (path.split('/').some((part) => !part || part.startsWith('.') || /[\\:*?"<>|\u0000-\u001f]/.test(part)
-    || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) {
+  if (path.split('/').some((part) => !part || part.startsWith('.') || /[\\:*?"<>|]/.test(part)
+    || hasControlCharacter(part) || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) {
     invalid('Folder must be a visible, vault-relative path')
   }
   return path
@@ -84,10 +88,13 @@ function optionalText(properties: Properties, key: string): string | undefined {
 function stringList(properties: Properties, key: string): readonly string[] {
   if (!Object.hasOwn(properties, key)) return Object.freeze([])
   const value = properties[key]
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !entry.trim())) {
-    invalid(`${key} must be a list of non-empty strings`)
+  if (!Array.isArray(value)) invalid(`${key} must be a list of non-empty strings`)
+  const entries: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !entry.trim()) invalid(`${key} must be a list of non-empty strings`)
+    entries.push(entry)
   }
-  return Object.freeze([...value] as string[])
+  return Object.freeze(entries)
 }
 
 function checkbox(properties: Properties, key: string): boolean {

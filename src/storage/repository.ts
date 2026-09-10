@@ -22,6 +22,7 @@ export class TaskRepository implements KanbanService {
   private readonly displayParsed = new WeakMap<NoteSource, ReturnType<typeof parseNote>>()
   private readonly dirtyPaths = new Set<string>()
   private displayRevision = 0
+  private displaySnapshot: { revision: number; paths: readonly string[]; catalogue: Catalogue } | undefined
 
   constructor(private readonly store: NoteStore, private readonly incremental = false) {}
 
@@ -32,6 +33,7 @@ export class TaskRepository implements KanbanService {
 
   invalidate(path?: string): void {
     this.displayRevision += 1
+    this.displaySnapshot = undefined
     if (path === undefined) { this.displayNotes.clear(); this.dirtyPaths.clear() }
     else this.dirtyPaths.add(path)
   }
@@ -40,6 +42,9 @@ export class TaskRepository implements KanbanService {
     this.assertActive()
     const revision = this.displayRevision
     const paths = this.store.listPaths()
+    const snapshot = this.displaySnapshot
+    if (snapshot?.revision === revision && paths.length === snapshot.paths.length
+      && paths.every((path, index) => path === snapshot.paths[index])) return snapshot.catalogue
     const present = new Set(paths)
     for (const path of this.displayNotes.keys()) if (!present.has(path)) this.displayNotes.delete(path)
     const notes: NoteSource[] = []
@@ -60,7 +65,11 @@ export class TaskRepository implements KanbanService {
     }
     if (revision === this.displayRevision) this.dirtyPaths.clear()
     const catalogue = buildCatalogue(notes, this.displayParsed)
-    return Object.freeze({ ...catalogue, diagnostics: Object.freeze([...catalogue.diagnostics, ...errors]) })
+    const result = Object.freeze({ ...catalogue, diagnostics: Object.freeze([...catalogue.diagnostics, ...errors]) })
+    if (!errors.length && revision === this.displayRevision) {
+      this.displaySnapshot = { revision, paths: [...paths], catalogue: result }
+    }
+    return result
   }
 
   previewConversion(path: string, boardId: string, columnId: string): Promise<ConversionDraft> {

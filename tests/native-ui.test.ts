@@ -90,6 +90,7 @@ class ControlStub {
   setIcon(_value: string): this { return this }
   setCta(): this { return this }
   setWarning(): this { return this }
+  setClass(_value: string): this { return this }
   setDisabled(value: boolean): this { this.disabled = value; return this }
   addOption(_id: string, _title: string): this { return this }
 }

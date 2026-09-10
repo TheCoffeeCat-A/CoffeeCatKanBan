@@ -10,7 +10,7 @@ import { PROTOTYPE_VIEW, PrototypeView } from './ui/prototype-view'
 export default class CoffeeCatKanBanPlugin extends Plugin {
   private preferences = defaultSettings()
   private repository: TaskRepository | undefined
-  private refreshTimer: ReturnType<typeof setTimeout> | undefined
+  private refreshTimer: number | undefined
 
   override async onload(): Promise<void> {
     try { this.preferences = readSettings(await this.loadData()) }
@@ -74,7 +74,7 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
       this.scheduleRefresh()
     }))
     this.register(() => {
-      if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer)
+      if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer)
       repository.dispose()
     })
   }
@@ -132,8 +132,8 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
   }
 
   private scheduleRefresh(): void {
-    if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer)
-    this.refreshTimer = setTimeout(() => {
+    if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer)
+    this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = undefined
       this.refreshViews()
     }, 100)

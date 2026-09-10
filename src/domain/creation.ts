@@ -1,6 +1,12 @@
 import { generateKeyBetween } from 'fractional-indexing'
 import { createNote } from './markdown'
-import { invalid, isIsoDate, readBoard, readTask, validateFolder, type Board, type Task } from './model'
+import { hasControlCharacter, invalid, isIsoDate, readBoard, readTask, validateFolder, type Board, type Task } from './model'
+
+const forbiddenFileNameChars = new Set('\\/:*?"<>|#^[]%')
+
+function fileNameStem(title: string): string {
+  return Array.from(title, (char) => hasControlCharacter(char) || forbiddenFileNameChars.has(char) ? '-' : char).join('')
+}
 
 export interface NewBoard {
   readonly title: string
@@ -23,7 +29,7 @@ export function creationTitle(value: string): string {
 
 export function availableNotePath(title: string, folder: string, existingPaths: readonly string[]): string {
   validateFolder(folder)
-  const normalized = creationTitle(title).replace(/[\\/:*?"<>|#^\[\]%\u0000-\u001f]/g, '-')
+  const normalized = fileNameStem(creationTitle(title))
   let stem = Array.from(normalized).slice(0, 80).join('').replace(/^[. ]+|[. ]+$/g, '') || 'Untitled'
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)) stem = `Note-${stem}`
   const used = new Set(existingPaths.map((path) => path.toLocaleLowerCase('en-US')))

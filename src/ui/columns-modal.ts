@@ -73,7 +73,7 @@ export class ColumnsModal extends Modal {
           const confirmation = new Modal(this.app)
           confirmation.titleEl.setText(`删除空列: ${column.title}?`)
           new Setting(confirmation.contentEl).addButton((cancel) => cancel.setButtonText('取消').onClick(() => confirmation.close()))
-            .addButton((remove) => remove.setButtonText('删除').setWarning().onClick(() => {
+            .addButton((remove) => remove.setButtonText('删除').setClass('mod-warning').onClick(() => {
               confirmation.close()
               this.submit({ kind: 'remove', id: column.id }, fields)
             }))
