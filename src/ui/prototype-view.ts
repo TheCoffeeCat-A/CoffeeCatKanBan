@@ -9,6 +9,7 @@ import type { KanbanService } from '../contracts'
 import { renderBoard } from './board-view'
 import { BatchActionModal } from './batch-action-modal'
 import { OperationReportModal } from './operation-report-modal'
+import { OrderRepairModal } from './order-repair-modal'
 import { ColumnsModal } from './columns-modal'
 import { iconButton } from './controls'
 import { CreationModal } from './creation-modal'
@@ -240,6 +241,11 @@ export class PrototypeView extends ItemView {
     const board = catalogue.boards.find((entry) => entry.id === this.boardId)
     if (board) {
       iconButton(header, 'file-text', '打开看板笔记', () => this.openNote(board.path))
+      iconButton(header, 'list-ordered', '修复列顺序', () => {
+        if (this.closed || this.acting || this.undoing) return
+        new OrderRepairModal(this.app, board, this.repository,
+          () => !this.closed && this.boardId === board.id && !this.acting && !this.undoing, this.changed).open()
+      })
       iconButton(header, 'settings-2', '管理看板列', () => {
         new ColumnsModal(this.app, board, this.repository, this.changed).open()
       })

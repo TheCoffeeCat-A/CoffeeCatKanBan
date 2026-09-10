@@ -198,6 +198,7 @@ function loadModal(filename: string, exportName: string): ModalConstructor {
 
 const Creation = loadModal('creation-modal.ts', 'CreationModal')
 const OperationReport = loadModal('operation-report-modal.ts', 'OperationReportModal')
+const OrderRepair = loadModal('order-repair-modal.ts', 'OrderRepairModal')
 const Columns = loadModal('columns-modal.ts', 'ColumnsModal')
 const Properties = loadModal('task-modal.ts', 'TaskPropertyModal')
 const TaskFile = loadModal('task-file-modal.ts', 'TaskFileModal')
@@ -829,4 +830,35 @@ test('reference cache events refresh targets without replacing drafts and unload
   assert.ok([...listeners.values()].every((callbacks) => callbacks.size === 0))
   emit('changed')
   assert.equal(modal.contentEl.children.length, 0)
+})
+
+test('order repair requires preview, rejects unavailable views and locks repeated submissions', async () => {
+  let writes = 0
+  let available = true
+  let release: (() => void) | undefined
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  const task = taskFixture('repair')
+  const service = {
+    previewOrderRepair: async () => ({ board, columnId: 'todo', entries: [{ task, order: 'a9' }] }),
+    repairOrder: async () => { writes += 1; await pending; return { results: [] } },
+  }
+  const modal = new OrderRepair({}, board, service, () => available, () => undefined)
+  modal.open()
+  button(modal, '确认修复').action()
+  assert.equal(writes, 0)
+  button(modal, '预览修复').action()
+  await nextTurn()
+  assert.ok(modal.contentEl.descendants().some((element) => element.textContent.includes(task.path)))
+  available = false
+  button(modal, '确认修复').action()
+  assert.equal(writes, 0)
+  available = true
+  button(modal, '确认修复').action()
+  button(modal, '确认修复').action()
+  assert.equal(writes, 1)
+  modal.close()
+  assert.equal(modal.closed, false)
+  release!()
+  await nextTurn()
+  assert.equal(modal.closed, true)
 })

@@ -7,6 +7,7 @@ import { parseNote, propertiesOf } from '../domain/markdown'
 import { invalid, KanbanError, readBoard, readTask, validateNotePath, type Board, type Task } from '../domain/model'
 import { assertTaskSnapshot, taskActionPatch, type BatchTaskAction, type TaskAction, type TaskOperationReport, type TaskOperationResult } from '../domain/task-actions'
 import { copiedTaskNote } from '../domain/task-files'
+import { planOrderRepair, type OrderRepairPlan } from '../domain/order-repair'
 
 export type { NoteStore, TaskDraft } from '../contracts'
 
@@ -21,6 +22,57 @@ export class TaskRepository implements KanbanService {
 
   scan(): Promise<Catalogue> {
     return this.enqueue(() => this.load('display'))
+  }
+
+  previewOrderRepair(boardId: string, columnId: string): Promise<OrderRepairPlan> {
+    return this.enqueue(async () => {
+      await this.load()
+      return this.orderRepairPlan(boardId, columnId)
+    })
+  }
+
+  private orderRepairPlan(boardId: string, columnId: string): OrderRepairPlan {
+    if (this.catalogue.diagnostics.length) throw new KanbanError('CONFLICT', 'Resolve data diagnostics before repairing order')
+    const board = this.catalogue.boards.find((entry) => entry.id === boardId)
+    if (!board) throw new KanbanError('NOT_FOUND', 'Board unavailable')
+    return planOrderRepair(board, columnId, this.catalogue.tasks)
+  }
+
+  repairOrder(plan: OrderRepairPlan): Promise<TaskOperationReport> {
+    const expected = structuredClone(plan)
+    return this.enqueue(async () => {
+      await this.load()
+      const fresh = this.orderRepairPlan(expected.board.id, expected.columnId)
+      if (JSON.stringify(fresh) !== JSON.stringify(expected)) throw new KanbanError('CONFLICT', 'Repair preview changed; reopen it')
+      const snapshots = expected.entries.map((entry) => entry.task)
+      const changes: TaskChange[] = []
+      const results: TaskOperationResult[] = []
+      for (const [index, entry] of expected.entries.entries()) {
+        try {
+          await this.load()
+          const current = this.orderRepairPlan(expected.board.id, expected.columnId)
+          const byId = new Map(current.entries.map((item) => [item.task.id, item.task]))
+          if (JSON.stringify(current.board) !== JSON.stringify(expected.board) || byId.size !== snapshots.length
+            || snapshots.some((task) => JSON.stringify(byId.get(task.id)) !== JSON.stringify(task))) {
+            throw new KanbanError('CONFLICT', 'Column changed during repair')
+          }
+          const draft = this.locate(entry.task.id)
+          const change = prepareChange(draft.content, { kanban_order: entry.order })
+          const applied = await this.write(change, (content) => {
+            if (content !== draft.content) throw new KanbanError('CONFLICT', 'Task changed before repair write')
+          })
+          if (applied) changes.push(change)
+          snapshots[index] = this.locate(entry.task.id).task
+          results.push({ taskId: entry.task.id, title: entry.task.title, status: applied ? 'success' : 'skipped' })
+        } catch (reason) {
+          results.push({ taskId: entry.task.id, title: entry.task.title, status: 'failed', message: reason instanceof Error ? reason.message : '修复失败' })
+          for (const pending of expected.entries.slice(index + 1)) results.push({ taskId: pending.task.id, title: pending.task.title, status: 'not-executed', message: '前一项失败, 未执行' })
+          break
+        }
+      }
+      if (changes.length && this.active) this.history.set(expected.board.id, Object.freeze(changes))
+      return Object.freeze({ results: Object.freeze(results) })
+    })
   }
 
   linkNote(expected: TaskDraft, targetPath: string): Promise<TaskDraft> {

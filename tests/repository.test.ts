@@ -735,3 +735,72 @@ test('task actions preserve unrelated external fields and edited body text', asy
   assert.equal(propertiesOf(store.files.get('Task.md')!).other_plugin, 'retained')
   assert.ok(store.files.get('Task.md')!.endsWith('New body\n'))
 })
+
+test('order repair includes archived and missing keys, preserves body and supports grouped undo', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  store.files.set(second.path, createNote({ ...propertiesOf(store.files.get(second.path)!), kanban_order: undefined, kanban_archived: true }, 'Preserved body'))
+  const before = store.files.get(second.path)!
+  const plan = await repository.previewOrderRepair(boardId, 'todo')
+  assert.equal(plan.entries.length, 2)
+  assert.ok(plan.entries[0]!.order < plan.entries[1]!.order)
+  const report = await repository.repairOrder(plan)
+  assert.deepEqual(report.results.map((entry) => entry.status), ['success', 'success'])
+  assert.ok(store.files.get(second.path)!.endsWith('Preserved body'))
+  await repository.undo(boardId)
+  assert.deepEqual(propertiesOf(store.files.get(second.path)!), propertiesOf(before))
+})
+
+test('order repair refuses stale previews, tampered keys and diagnostics without writes', async () => {
+  for (const mode of ['stale', 'tampered', 'diagnostic']) {
+    const store = new MemoryStore()
+    const repository = new TaskRepository(store)
+    const plan = await repository.previewOrderRepair(boardId, 'todo')
+    if (mode === 'stale') store.files.set('Task.md', createNote({ ...propertiesOf(taskContent), kanban_order: 'a2' }))
+    if (mode === 'diagnostic') store.files.set('Duplicate.md', taskContent)
+    const submitted = mode === 'tampered' ? { ...plan, entries: plan.entries.map((entry) => ({ ...entry, order: 'a9' })) } : plan
+    await assert.rejects(repository.repairOrder(submitted), /preview changed|diagnostics/)
+    assert.equal(store.writes, 0)
+    assert.equal(repository.hasUndo(boardId), false)
+  }
+})
+
+test('order repair stops after failure and undo restores only its successful subset', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const second = await repository.createTask({ boardId, title: 'Second' })
+  const third = await repository.createTask({ boardId, title: 'Third' })
+  store.files.set(second.path, createNote({ ...propertiesOf(store.files.get(second.path)!), kanban_order: 'a0' }))
+  const original = new Map(store.files)
+  const plan = await repository.previewOrderRepair(boardId, 'todo')
+  let calls = 0
+  store.beforeProcess = async () => { calls += 1; if (calls === 2) store.fail = true }
+  const report = await repository.repairOrder(plan)
+  assert.deepEqual(report.results.map((result) => result.status), ['success', 'failed', 'not-executed'])
+  assert.equal(store.files.get(third.path), original.get(third.path))
+  store.beforeProcess = undefined
+  store.fail = false
+  const undone = await repository.undo(boardId)
+  assert.equal(undone.results.length, 1)
+  for (const [path, content] of original) assert.deepEqual(propertiesOf(store.files.get(path)!), propertiesOf(content))
+})
+
+test('order repair detects column membership races and final source changes', async () => {
+  for (const mode of ['membership', 'source', 'disposed']) {
+    const store = new MemoryStore()
+    const repository = new TaskRepository(store)
+    const second = await repository.createTask({ boardId, title: 'Second' })
+    const plan = await repository.previewOrderRepair(boardId, 'todo')
+    store.beforeProcess = async () => {
+      store.beforeProcess = undefined
+      if (mode === 'membership') store.files.set(second.path, createNote({ ...propertiesOf(store.files.get(second.path)!), kanban_column: 'doing' }))
+      if (mode === 'source') store.files.set('Task.md', taskContent + 'External body')
+      if (mode === 'disposed') repository.dispose()
+    }
+    const report = await repository.repairOrder(plan)
+    assert.equal(report.results[mode === 'membership' ? 1 : 0]!.status, 'failed')
+    if (mode === 'source') assert.equal(store.files.get('Task.md'), taskContent + 'External body')
+    if (mode === 'disposed') assert.equal(repository.hasUndo(boardId), false)
+  }
+})

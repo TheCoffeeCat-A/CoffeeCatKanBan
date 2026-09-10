@@ -1,4 +1,5 @@
 import type { Catalogue, NoteSource } from './domain/catalogue'
+import type { OrderRepairPlan } from './domain/order-repair'
 import type { TaskChange } from './domain/changes'
 import type { ColumnAction } from './domain/columns'
 import type { NewBoard, NewTask } from './domain/creation'
@@ -21,6 +22,8 @@ export interface TaskDraft {
 }
 
 export interface KanbanService {
+  previewOrderRepair(boardId: string, columnId: string): Promise<OrderRepairPlan>
+  repairOrder(plan: OrderRepairPlan): Promise<TaskOperationReport>
   linkNote(expected: TaskDraft, targetPath: string): Promise<TaskDraft>
   scan(): Promise<Catalogue>
   draft(taskId: string): Promise<TaskDraft>
