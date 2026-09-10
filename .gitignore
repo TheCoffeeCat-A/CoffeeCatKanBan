@@ -1,0 +1,5 @@
+node_modules/
+.cache/
+.test-vault/
+main.js
+main.js.map

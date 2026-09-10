@@ -1,0 +1,29 @@
+{
+  "name": "coffeecat-kanban",
+  "version": "0.3.2",
+  "private": true,
+  "type": "module",
+  "description": "Native Obsidian task boards for CoffeeCatKanBan",
+  "author": "TheCoffeeCat",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "typecheck": "npm run check:boundaries && tsc --noEmit",
+    "build": "npm run typecheck && node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "test": "node scripts/test.mjs",
+    "check": "npm run typecheck && npm test && node scripts/build.mjs"
+  },
+  "dependencies": {
+    "fractional-indexing": "4.0.0",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "esbuild": "0.28.2",
+    "obsidian": "1.13.1",
+    "typescript": "5.9.3"
+  }
+}

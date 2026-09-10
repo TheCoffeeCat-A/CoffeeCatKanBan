@@ -1,0 +1,254 @@
+import type { KanbanService, NoteStore, TaskDraft } from '../contracts'
+import { buildCatalogue, type Catalogue, type Diagnostic, type NoteSource } from '../domain/catalogue'
+import { changeColumns, type ColumnAction } from '../domain/columns'
+import { applyChange, prepareChange, reverseChange, type TaskChange } from '../domain/changes'
+import { availableNotePath, newBoardNote, newTaskNote, type NewBoard, type NewTask } from '../domain/creation'
+import { parseNote, propertiesOf } from '../domain/markdown'
+import { KanbanError, readBoard, readTask, validateNotePath, type Board, type Task } from '../domain/model'
+import { assertTaskSnapshot, taskActionPatch, type TaskAction } from '../domain/task-actions'
+import { copiedTaskNote } from '../domain/task-files'
+
+export type { NoteStore, TaskDraft } from '../contracts'
+
+export class TaskRepository implements KanbanService {
+  private active = true
+  private queue: Promise<unknown> = Promise.resolve()
+  private notes: readonly NoteSource[] = []
+  private catalogue: Catalogue = buildCatalogue([])
+  private readonly history = new Map<string, TaskChange>()
+
+  constructor(private readonly store: NoteStore) {}
+
+  scan(): Promise<Catalogue> {
+    return this.enqueue(() => this.load('display'))
+  }
+
+  createBoard(input: NewBoard): Promise<Board> {
+    return this.enqueue(async () => {
+      await this.load()
+      const path = availableNotePath(input.title, input.folder, this.store.listPaths())
+      const content = newBoardNote(input, crypto.randomUUID(), path)
+      const board = readBoard(propertiesOf(content), path)
+      await this.persistCreated(path, content)
+      this.acceptCreated(path, content)
+      return board
+    })
+  }
+
+  createTask(input: NewTask): Promise<Task> {
+    return this.enqueue(async () => {
+      await this.load()
+      const board = this.catalogue.boards.find((entry) => entry.id === input.boardId)
+      if (!board) throw new KanbanError('NOT_FOUND', 'Board is missing, invalid, or conflicting')
+      const path = availableNotePath(input.title, board.taskFolder, this.store.listPaths())
+      const content = newTaskNote(input, crypto.randomUUID(), path, board, this.catalogue.tasks)
+      const task = readTask(propertiesOf(content), path)
+      await this.persistCreated(path, content)
+      this.acceptCreated(path, content)
+      return task
+    })
+  }
+
+  // Create an independent copy only while the reviewed source still matches
+  // type: (TaskDraft) => Promise<Task>
+  copyTask(expected: TaskDraft): Promise<Task> {
+    return this.enqueue(async () => {
+      await this.load()
+      const draft = this.fileDraft(expected)
+      const folder = draft.task.path.split('/').slice(0, -1).join('/')
+      const path = availableNotePath(draft.task.title, folder, this.store.listPaths())
+      const content = copiedTaskNote(draft.content, draft.task.path, crypto.randomUUID(), path, draft.board, this.catalogue.tasks)
+      const task = readTask(propertiesOf(content), path)
+      await this.persistCreated(path, content, { path: draft.task.path, content: draft.content })
+      this.acceptCreated(path, content)
+      return task
+    })
+  }
+
+  // Remove only the reviewed task through the host trash operation
+  // type: (TaskDraft) => Promise<void>
+  deleteTask(expected: TaskDraft): Promise<void> {
+    return this.enqueue(async () => {
+      await this.load()
+      const draft = this.fileDraft(expected)
+      validateNotePath(draft.task.path)
+      await this.store.trash(draft.task.path, draft.content, () => this.assertActive())
+      if (this.active) {
+        this.notes = this.notes.filter((note) => note.path !== draft.task.path)
+        this.catalogue = buildCatalogue(this.notes)
+        if (this.history.get(draft.board.id)?.taskId === draft.task.id) this.history.delete(draft.board.id)
+      }
+    })
+  }
+
+  editColumns(expected: Board, action: ColumnAction): Promise<Board> {
+    return this.enqueue(async () => {
+      await this.load()
+      const board = this.catalogue.boards.find((entry) => entry.id === expected.id)
+      if (!board) throw new KanbanError('NOT_FOUND', 'Board is missing, invalid, or conflicting')
+      const references = this.notes.flatMap((note) => {
+        try {
+          const parsed = parseNote(note.content)
+          return parsed ? [parsed.properties] : []
+        } catch {
+          if ((action.kind === 'remove' || action.kind === 'done') && /^kanban_/m.test(note.content)) {
+            throw new KanbanError('CONFLICT', 'Repair invalid task notes before deleting or changing completed columns')
+          }
+          return []
+        }
+      })
+      const content = await this.store.process(board.path, (current) => {
+        this.assertActive()
+        return changeColumns(current, expected, action, references)
+      })
+      if (this.active) {
+        this.notes = this.notes.map((note) => note.path === board.path ? { ...note, content } : note)
+        this.catalogue = buildCatalogue(this.notes)
+      }
+      return readBoard(propertiesOf(content), board.path)
+    })
+  }
+
+  draft(taskId: string): Promise<TaskDraft> {
+    return this.enqueue(async () => {
+      await this.load()
+      return this.locate(taskId)
+    })
+  }
+
+  commit(change: TaskChange): Promise<void> {
+    return this.enqueue(async () => {
+      await this.load()
+      const applied = await this.write(change)
+      if (applied && this.active) this.history.set(change.boardId, change)
+    })
+  }
+
+  undo(boardId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const previous = this.history.get(boardId)
+      if (!previous) throw new KanbanError('NOT_FOUND', 'No supported operation to undo')
+      await this.load()
+      await this.write(reverseChange(previous))
+      this.history.delete(boardId)
+    })
+  }
+
+  actOnTask(expected: Task, action: TaskAction): Promise<void> {
+    return this.enqueue(async () => {
+      await this.load()
+      const draft = this.locate(expected.id)
+      assertTaskSnapshot(expected, draft.task, action)
+      const patch = taskActionPatch(this.catalogue.tasks, draft.task, draft.board, action)
+      const change = prepareChange(draft.content, patch)
+      const applied = await this.write(change, (current) => {
+        assertTaskSnapshot(expected, readTask(propertiesOf(current), draft.task.path), action)
+      })
+      if (applied && this.active) this.history.set(change.boardId, change)
+    })
+  }
+
+  hasUndo(boardId: string): boolean {
+    return this.active && this.history.has(boardId)
+  }
+
+  dispose(): void {
+    this.active = false
+    this.history.clear()
+  }
+
+  private assertActive(): void {
+    if (!this.active) throw new KanbanError('INACTIVE', 'Plugin is no longer active')
+  }
+
+  private acceptCreated(path: string, content: string): void {
+    if (!this.active) return
+    this.notes = [...this.notes, { path, content }]
+    this.catalogue = buildCatalogue(this.notes)
+  }
+
+  private async persistCreated(path: string, content: string, source?: NoteSource): Promise<void> {
+    validateNotePath(path)
+    try {
+      await this.store.create(path, content, () => this.assertActive(), source)
+    } catch (reason) {
+      let current: string
+      try {
+        current = await this.store.read(path)
+      } catch {
+        throw reason
+      }
+      if (current !== content) throw reason
+    }
+  }
+
+  private enqueue<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const result = this.queue.then(() => {
+      this.assertActive()
+      return operation()
+    })
+    this.queue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async load(mode: 'strict' | 'display' = 'strict'): Promise<Catalogue> {
+    this.assertActive()
+    const notes: NoteSource[] = []
+    const readErrors: Diagnostic[] = []
+    for (const path of this.store.listPaths()) {
+      try {
+        notes.push({ path, content: await this.store.read(path) })
+      } catch (reason) {
+        if (mode === 'strict') throw reason
+        readErrors.push(Object.freeze({ path, message: 'Note could not be read; other readable notes are still displayed. Retry after restoring access' }))
+      }
+      this.assertActive()
+    }
+    this.notes = notes
+    const catalogue = buildCatalogue(notes)
+    this.catalogue = Object.freeze({
+      ...catalogue,
+      diagnostics: Object.freeze([...catalogue.diagnostics, ...readErrors]),
+    })
+    return this.catalogue
+  }
+
+  private locate(taskId: string): TaskDraft {
+    const task = this.catalogue.tasks.find((entry) => entry.id === taskId)
+    if (!task) throw new KanbanError('NOT_FOUND', 'Task is missing, invalid, or has an identity conflict')
+    const board = this.catalogue.boards.find((entry) => entry.id === task.boardId)
+    const source = this.notes.find((entry) => entry.path === task.path)
+    if (!board || !source) throw new KanbanError('NOT_FOUND', 'Task source is unavailable')
+    return Object.freeze({ task, board, content: source.content })
+  }
+
+  // Reject a file operation when its confirmed path, content or board changed
+  // type: (TaskDraft) => TaskDraft
+  private fileDraft(expected: TaskDraft): TaskDraft {
+    const current = this.locate(expected.task.id)
+    if (current.task.path !== expected.task.path || current.content !== expected.content
+      || JSON.stringify(current.board) !== JSON.stringify(expected.board)) {
+      throw new KanbanError('CONFLICT', 'Task or board changed since review; reopen the confirmation')
+    }
+    return current
+  }
+
+  private async write(change: TaskChange, guard?: (current: string) => void): Promise<boolean> {
+    this.assertActive()
+    const draft = this.locate(change.taskId)
+    if (!change.fields.length) return false
+    let changed = false
+    const content = await this.store.process(draft.task.path, (current) => {
+      this.assertActive()
+      guard?.(current)
+      const next = applyChange(current, change, draft.board)
+      changed = next !== current
+      return next
+    })
+    if (this.active) {
+      this.notes = this.notes.map((entry) => entry.path === draft.task.path ? { ...entry, content } : entry)
+      this.catalogue = buildCatalogue(this.notes)
+    }
+    return changed
+  }
+}

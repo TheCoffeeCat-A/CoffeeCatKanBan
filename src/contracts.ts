@@ -1,0 +1,34 @@
+import type { Catalogue, NoteSource } from './domain/catalogue'
+import type { TaskChange } from './domain/changes'
+import type { ColumnAction } from './domain/columns'
+import type { NewBoard, NewTask } from './domain/creation'
+import type { Board, Task } from './domain/model'
+import type { TaskAction } from './domain/task-actions'
+
+export interface NoteStore {
+  listPaths(): readonly string[]
+  read(path: string): Promise<string>
+  process(path: string, update: (content: string) => string): Promise<string>
+  create(path: string, content: string, assertActive: () => void, source?: NoteSource): Promise<void>
+  trash(path: string, expectedContent: string, assertActive: () => void): Promise<void>
+}
+
+export interface TaskDraft {
+  readonly task: Task
+  readonly board: Board
+  readonly content: string
+}
+
+export interface KanbanService {
+  scan(): Promise<Catalogue>
+  draft(taskId: string): Promise<TaskDraft>
+  createBoard(input: NewBoard): Promise<Board>
+  createTask(input: NewTask): Promise<Task>
+  copyTask(expected: TaskDraft): Promise<Task>
+  deleteTask(expected: TaskDraft): Promise<void>
+  editColumns(expected: Board, action: ColumnAction): Promise<Board>
+  commit(change: TaskChange): Promise<void>
+  actOnTask(expected: Task, action: TaskAction): Promise<void>
+  undo(boardId: string): Promise<void>
+  hasUndo(boardId: string): boolean
+}

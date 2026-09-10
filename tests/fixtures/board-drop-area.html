@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Board drop area layout test</title>
+  <link rel="stylesheet" href="../../styles.css">
+  <style>
+    :root {
+      --size-4-1: 4px;
+      --size-4-2: 8px;
+      --size-4-3: 12px;
+      --size-4-4: 16px;
+      --font-ui-small: 13px;
+      --font-ui-large: 18px;
+      --font-ui-medium: 14px;
+      --background-primary: #202020;
+      --background-secondary: #282828;
+      --background-modifier-border: #444;
+      --text-normal: #eee;
+      --text-muted: #aaa;
+      --interactive-accent: #4eb49b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px sans-serif; }
+    .fixture-pane { height: 100vh; overflow: hidden; }
+    .view-content { height: 100%; }
+    .fixture-header { height: 128px; }
+    button { color: inherit; font: inherit; min-height: 30px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="fixture-pane">
+    <main class="view-content cckb-prototype">
+      <header class="fixture-header">CoffeeCatKanBan</header>
+      <div class="cckb-results">
+        <div class="cckb-board-scroll">
+          <div class="cckb-board-grid">
+            <section class="cckb-column" data-column-id="todo">
+              <div class="cckb-column-header"><h3>To do</h3></div>
+              <div class="cckb-cards">
+                <article class="cckb-card" data-task-id="task-one">
+                  <div class="cckb-card-heading"><h4>Task one</h4></div>
+                  <div class="cckb-card-tools"><button type="button" draggable="true" aria-label="Drag task">::</button></div>
+                </article>
+              </div>
+              <button class="cckb-add-task" type="button">Add task</button>
+            </section>
+            <section class="cckb-column" data-column-id="doing">
+              <div class="cckb-column-header"><h3>Doing</h3></div>
+              <div class="cckb-cards">
+                <article class="cckb-card" data-task-id="task-two">
+                  <div class="cckb-card-heading"><h4>Task two</h4></div>
+                  <p>Some additional task content</p>
+                  <p>Another line</p>
+                </article>
+              </div>
+              <button class="cckb-add-task" type="button">Add task</button>
+            </section>
+            <section class="cckb-column" data-column-id="done">
+              <div class="cckb-column-header"><h3>Done</h3></div>
+              <div class="cckb-cards"><p class="cckb-column-empty">No tasks</p></div>
+              <button class="cckb-add-task" type="button">Add task</button>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
