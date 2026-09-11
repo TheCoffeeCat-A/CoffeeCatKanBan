@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian'
+import { Menu, setIcon } from 'obsidian'
 import type { Board, Task } from '../domain/model'
 import { calendarMonth, shiftMonth } from '../domain/calendar'
 import { iconButton } from './controls'
@@ -47,8 +47,18 @@ export function renderCalendar(container: HTMLElement, board: Board, visible: re
   for (const cell of month.cells) {
     const day = grid.createDiv({ cls: `cckb-calendar-day${cell.inMonth ? '' : ' cckb-calendar-day-outside'}${cell.date === today ? ' cckb-calendar-day-today' : ''}`, attr: { role: 'gridcell', 'aria-label': cell.date } })
     day.createEl('time', { text: String(cell.day), attr: { datetime: cell.date } })
-    iconButton(day, 'plus', `新建任务: ${cell.date}`, () => {
+    day.addEventListener('dblclick', () => {
       if (interaction.available()) createTask(cell.date)
+    })
+    day.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      if ((event.target as Element).closest('.cckb-calendar-task-row')) return
+      if (!interaction.available()) return
+      const menu = new Menu()
+      menu.addItem((item) => item.setTitle('创建任务').setIcon('plus').onClick(() => {
+        if (interaction.available()) createTask(cell.date)
+      }))
+      menu.showAtMouseEvent(event)
     })
     const tasks = day.createDiv({ cls: 'cckb-calendar-tasks' })
     if (cell.inMonth) {
