@@ -68,7 +68,7 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
     // Open task notes in their board view when they are selected in the vault
     // type: (TFile | null) => void
     this.registerEvent(this.app.workspace.on('file-open', (file) => {
-      if (!(file instanceof TFile) || !this.isTaskFile(file)) return
+      if (!(file instanceof TFile) || !this.isBoardOrTask(file)) return
       void this.openForFile(file)
     }))
     this.registerEvent(this.app.vault.on('create', (file) => { repository.invalidate(file instanceof TFile ? file.path : undefined); this.scheduleRefresh() }))
@@ -110,11 +110,6 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
 
   // Check whether a vault file is a CoffeeCatKanBan task
   // type: (TFile) => boolean
-  private isTaskFile(file: TFile): boolean {
-    if (file.extension !== 'md') return false
-    return this.app.metadataCache.getFileCache(file)?.frontmatter?.kanban_kind === 'task'
-  }
-
   private async openForFile(file: TFile): Promise<void> {
     try {
       const catalogue = await this.repository?.scan()
@@ -123,6 +118,9 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
       const boardId = board?.id ?? task?.boardId
       if (!boardId) { new Notice('笔记的看板属性无效或存在身份冲突'); return }
       await this.openBoard(boardId)
+      for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+        if ((leaf.view as { file?: TFile | null }).file?.path === file.path) leaf.detach()
+      }
     } catch (reason) {
       new Notice(reason instanceof Error ? reason.message : '无法打开看板')
     }
