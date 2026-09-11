@@ -14,6 +14,7 @@ import { ColumnsModal } from './columns-modal'
 import { iconButton } from './controls'
 import { CreationModal } from './creation-modal'
 import { renderCalendar } from './calendar-view'
+import { renderHome } from './home-view'
 import { renderData } from './data-view'
 import { renderQueryBar } from './query-bar'
 import type { TaskInteraction } from './task-menu'
@@ -368,10 +369,18 @@ export class PrototypeView extends ItemView {
       renderResults()
       if (searchFocused) this.searchInput.focus()
     } else {
-      const empty = this.contentEl.createDiv({ cls: 'cckb-empty' })
-      empty.createEl('p', { text: this.boardId ? '所选看板不存在或存在数据冲突' : '未选择看板' })
-      const button = empty.createEl('button', { cls: 'mod-cta', text: '新建看板' })
-      button.addEventListener('click', () => this.createBoard())
+      header.addClass('cckb-home-toolbar')
+      renderHome(this.contentEl, catalogue, Boolean(this.boardId), () => {
+        if (!this.closed) this.createBoard()
+      }, (id) => {
+        if (this.closed) return
+        this.boardId = id
+        this.listScroll.clear()
+        this.selectedTasks.clear()
+        this.query = defaultQuery()
+        this.saveState()
+        this.render(catalogue)
+      })
     }
     if (catalogue.diagnostics.length) {
       const details = this.contentEl.createEl('details')
