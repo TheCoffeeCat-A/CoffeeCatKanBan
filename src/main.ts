@@ -65,6 +65,12 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
         void this.openForFile(file)
       }))
     }))
+    // Open task notes in their board view when they are selected in the vault
+    // type: (TFile | null) => void
+    this.registerEvent(this.app.workspace.on('file-open', (file) => {
+      if (!(file instanceof TFile) || !this.isTaskFile(file)) return
+      void this.openForFile(file)
+    }))
     this.registerEvent(this.app.vault.on('create', (file) => { repository.invalidate(file instanceof TFile ? file.path : undefined); this.scheduleRefresh() }))
     this.registerEvent(this.app.vault.on('modify', (file) => { repository.invalidate(file.path); this.scheduleRefresh() }))
     this.registerEvent(this.app.vault.on('delete', (file) => { repository.invalidate(file instanceof TFile ? file.path : undefined); this.scheduleRefresh() }))
@@ -100,6 +106,13 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
     if (file.extension !== 'md') return false
     const kind: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.kanban_kind
     return kind === 'board' || kind === 'task'
+  }
+
+  // Check whether a vault file is a CoffeeCatKanBan task
+  // type: (TFile) => boolean
+  private isTaskFile(file: TFile): boolean {
+    if (file.extension !== 'md') return false
+    return this.app.metadataCache.getFileCache(file)?.frontmatter?.kanban_kind === 'task'
   }
 
   private async openForFile(file: TFile): Promise<void> {
