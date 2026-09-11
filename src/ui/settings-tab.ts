@@ -47,7 +47,7 @@ export class KanbanSettingsTab extends PluginSettingTab {
       row('新建看板默认目录', (setting, form) => { setting.addText((input) => input.setValue(form.draft.boardFolder).onChange((value) => {
         if (editable(form)) form.draft.boardFolder = value
       })) }),
-      row('新看板的默认任务目录', (setting, form) => { setting.addText((input) => input.setValue(form.draft.taskFolder).onChange((value) => {
+      row('新看板的默认任务目录', (setting, form) => { setting.setDesc('相对于看板所在目录, 留空为每个看板创建 "看板文件名-卡片" 子文件夹').addText((input) => input.setValue(form.draft.taskFolder).onChange((value) => {
         if (editable(form)) form.draft.taskFolder = value
       })) }),
       row('默认显示归档', (setting, form) => { setting.addToggle((input) => input.setValue(form.draft.showArchived).onChange((value) => {

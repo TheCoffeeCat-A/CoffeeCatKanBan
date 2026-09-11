@@ -4,6 +4,7 @@ import { buildCatalogue, type NoteSource } from '../src/domain/catalogue'
 import { prepareChange } from '../src/domain/changes'
 import { createNote, propertiesOf } from '../src/domain/markdown'
 import { readBoard, readTask } from '../src/domain/model'
+import { defaultSettings } from '../src/domain/settings'
 import { completionPatch, movePatch } from '../src/domain/ordering'
 import { TaskRepository, type NoteStore } from '../src/storage/repository'
 import { setImmediate as nextTurn } from 'node:timers/promises'
@@ -468,6 +469,76 @@ test('task creation persists native schema in the selected board folder and colu
   assert.ok(second.order! > first.order!)
   assert.equal(repository.hasUndo(boardId), false)
   assert.equal((await repository.scan()).tasks.length, 3)
+})
+
+test('default card folders follow unique board filenames and keep same-named cards separate', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const input = { title: '开发计划看板', folder: '项目/开发计划', taskFolder: defaultSettings().taskFolder }
+  const first = await repository.createBoard(input)
+  const second = await repository.createBoard(input)
+  assert.equal(first.taskFolder, '项目/开发计划/开发计划看板-卡片')
+  assert.equal(second.taskFolder, '项目/开发计划/开发计划看板 (2)-卡片')
+  for (const board of [first, second]) {
+    const firstTask = await repository.createTask({ boardId: board.id, title: '防具锻造台' })
+    const secondTask = await repository.createTask({ boardId: board.id, title: '防具锻造台' })
+    assert.equal(firstTask.path, `${board.taskFolder}/防具锻造台.md`)
+    assert.equal(secondTask.path, `${board.taskFolder}/防具锻造台 (2).md`)
+    assert.equal(propertiesOf(store.files.get(board.path)!).kanban_new_task_folder, board.taskFolder)
+  }
+  assert.equal((await repository.scan()).diagnostics.length, 0)
+})
+
+test('new boards resolve automatic root folders and custom child folders beside the board', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const root = await repository.createBoard({ title: 'Root', folder: '', taskFolder: '' })
+  const nested = await repository.createBoard({ title: 'Nested', folder: 'Plans', taskFolder: 'Cards/Work' })
+  const sanitized = await repository.createBoard({ title: 'Plan: [release]', folder: 'Plans', taskFolder: '' })
+  assert.equal(root.taskFolder, 'Root-卡片')
+  assert.equal(nested.taskFolder, 'Plans/Cards/Work')
+  assert.equal(sanitized.taskFolder, 'Plans/Plan- -release--卡片')
+  for (const board of [root, nested, sanitized]) {
+    const task = await repository.createTask({ boardId: board.id, title: 'Card' })
+    assert.equal(task.path, `${board.taskFolder}/Card.md`)
+  }
+})
+
+test('legacy flat and unrelated destinations use a child folder without moving existing cards', async () => {
+  for (const folder of ['', 'Plans', 'Tasks', 'Plans elsewhere/Cards', 'Plans/Cards']) {
+    const store = new MemoryStore()
+    const content = createNote({ ...propertiesOf(boardContent), kanban_new_task_folder: folder }, '# Board body\n')
+    store.files.delete('Board.md')
+    store.files.set('Plans/Board.md', content)
+    const repository = new TaskRepository(store)
+    const task = await repository.createTask({ boardId, title: 'New card' })
+    assert.equal(task.path, `${folder === 'Plans/Cards' ? folder : 'Plans/Board-卡片'}/New card.md`)
+    assert.equal(store.files.get('Plans/Board.md'), content)
+    assert.equal(store.files.get('Task.md'), taskContent)
+    const catalogue = await repository.scan()
+    assert.equal(catalogue.tasks.length, 2)
+    assert.equal(catalogue.diagnostics.length, 0)
+  }
+})
+
+test('new cards follow a moved board and remain usable after a destination write failure', async () => {
+  const store = new MemoryStore()
+  const repository = new TaskRepository(store)
+  const board = await repository.createBoard({ title: 'Board', folder: 'Plans', taskFolder: '' })
+  const oldTask = await repository.createTask({ boardId: board.id, title: 'Existing' })
+  const oldContent = store.files.get(oldTask.path)
+  const boardSource = store.files.get(board.path)!
+  store.files.delete(board.path)
+  store.files.set('Other/Board.md', boardSource)
+  store.fail = true
+  await assert.rejects(repository.createTask({ boardId: board.id, title: 'New' }), /Disk write failed/)
+  assert.equal(store.files.has('Other/Board-卡片/New.md'), false)
+  store.fail = false
+  const task = await repository.createTask({ boardId: board.id, title: 'New' })
+  assert.equal(task.path, 'Other/Board-卡片/New.md')
+  assert.equal(store.files.get(oldTask.path), oldContent)
+  assert.equal(store.files.get('Other/Board.md'), boardSource)
+  assert.equal((await repository.scan()).diagnostics.length, 0)
 })
 
 test('invalid creation requests and disk failures leave existing notes untouched', async () => {

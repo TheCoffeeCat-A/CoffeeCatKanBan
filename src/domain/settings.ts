@@ -7,8 +7,10 @@ export interface KanbanSettings {
   showArchived: boolean
 }
 
+// Use a separate folder named after each board unless a child folder is configured
+// type: () => KanbanSettings
 export function defaultSettings(): KanbanSettings {
-  return { defaultView: 'board', boardFolder: '', taskFolder: 'Tasks', showArchived: false }
+  return { defaultView: 'board', boardFolder: '', taskFolder: '', showArchived: false }
 }
 
 export function readSettings(value: unknown): KanbanSettings {

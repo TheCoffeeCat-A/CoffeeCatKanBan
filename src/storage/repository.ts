@@ -3,7 +3,7 @@ import { convertNote } from '../domain/conversion'
 import { buildCatalogue, buildCatalogueAsync, type Catalogue, type Diagnostic, type NoteSource } from '../domain/catalogue'
 import { changeColumns, type ColumnAction } from '../domain/columns'
 import { applyChange, prepareChange, reverseChange, type TaskChange } from '../domain/changes'
-import { availableNotePath, newBoardNote, newTaskNote, type NewBoard, type NewTask } from '../domain/creation'
+import { availableNotePath, newBoardNote, newTaskNote, taskFolderForBoard, type NewBoard, type NewTask } from '../domain/creation'
 import { parseNote, propertiesOf } from '../domain/markdown'
 import { invalid, KanbanError, readBoard, readTask, validateNotePath, type Board, type Task } from '../domain/model'
 import { assertTaskSnapshot, taskActionPatch, type BatchTaskAction, type TaskAction, type TaskOperationReport, type TaskOperationResult } from '../domain/task-actions'
@@ -189,12 +189,14 @@ export class TaskRepository implements KanbanService {
     })
   }
 
+  // Resolve the current board's child folder before creating a card without overwriting notes
+  // type: (NewTask) => Promise<Task>
   createTask(input: NewTask): Promise<Task> {
     return this.enqueue(async () => {
       await this.load()
       const board = this.catalogue.boards.find((entry) => entry.id === input.boardId)
       if (!board) throw new KanbanError('NOT_FOUND', 'Board is missing, invalid, or conflicting')
-      const path = availableNotePath(input.title, board.taskFolder, this.store.listPaths())
+      const path = availableNotePath(input.title, taskFolderForBoard(board), this.store.listPaths())
       const content = newTaskNote(input, crypto.randomUUID(), path, board, this.catalogue.tasks)
       const task = readTask(propertiesOf(content), path)
       await this.persistCreated(path, content)

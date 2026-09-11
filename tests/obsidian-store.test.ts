@@ -11,6 +11,12 @@ class FileStub {
   constructor(public path: string) {}
 }
 
+class FolderStub {
+  // Represent a native folder for destination type checks
+  // type: (string) => FolderStub
+  constructor(readonly path: string) {}
+}
+
 class MarkdownViewStub {
   constructor(readonly file: FileStub, readonly editor: { getValue: () => string }) {}
 }
@@ -23,22 +29,27 @@ const moduleResult = { exports: {} as { ObsidianNoteStore: new (app: App) => Not
 const nativeRequire = createRequire(resolve('package.json'))
 new Function('module', 'exports', 'require', compiled)(moduleResult, moduleResult.exports,
   (name: string) => name === 'obsidian'
-    ? { TFile: FileStub, TFolder: class {}, MarkdownView: MarkdownViewStub }
+    ? { TFile: FileStub, TFolder: FolderStub, MarkdownView: MarkdownViewStub }
     : nativeRequire(name))
 
 // Build a host substitute that records only explicit trash and create calls
 // type: () => host fixture
 function fixture() {
   const file = new FileStub('Task.md')
-  const files = new Map([['Task.md', file]])
+  const files = new Map<string, FileStub | FolderStub>([['Task.md', file]])
   const contents = new Map([['Task.md', '# Saved body\n']])
   const leaves: { view: MarkdownViewStub }[] = []
   const trashed: FileStub[] = []
   const created: string[] = []
+  const createdFolders: string[] = []
   const host = {
     vault: {
       getAbstractFileByPath: (path: string) => files.get(path),
-      getMarkdownFiles: () => [...files.values()],
+      getMarkdownFiles: () => [...files.values()].filter((entry) => entry instanceof FileStub),
+      createFolder: async (path: string) => {
+        createdFolders.push(path)
+        files.set(path, new FolderStub(path))
+      },
       process: async (target: FileStub, update: (content: string) => string) => {
         const content = update(contents.get(target.path)!)
         contents.set(target.path, content)
@@ -60,8 +71,33 @@ function fixture() {
       trashFile: async (target: FileStub) => { trashed.push(target); files.delete(target.path) } },
   }
   const store = new moduleResult.exports.ObsidianNoteStore(host as unknown as App)
-  return { host, store, file, files, contents, leaves, trashed, created }
+  return { host, store, file, files, contents, leaves, trashed, created, createdFolders }
 }
+
+test('card creation makes missing child folders and reuses them for later cards', async () => {
+  const current = fixture()
+  current.files.set('Plans', new FolderStub('Plans'))
+  await current.store.create('Plans/Board-卡片/One.md', '# One', () => undefined)
+  await current.store.create('Plans/Board-卡片/Two.md', '# Two', () => undefined)
+  assert.deepEqual(current.createdFolders, ['Plans/Board-卡片'])
+  assert.deepEqual(current.created, ['Plans/Board-卡片/One.md', 'Plans/Board-卡片/Two.md'])
+})
+
+test('folder creation failures and file collisions stop writes and allow recovery', async () => {
+  const current = fixture()
+  current.files.set('Plans', new FileStub('Plans'))
+  await assert.rejects(current.store.create('Plans/Board-卡片/Card.md', '# Card', () => undefined), /destination folder is a file/)
+  assert.equal(current.created.length, 0)
+  current.files.delete('Plans')
+  const createFolder = current.host.vault.createFolder
+  current.host.vault.createFolder = async () => { throw new Error('Folder creation failed') }
+  await assert.rejects(current.store.create('Plans/Board-卡片/Card.md', '# Card', () => undefined), /Folder creation failed/)
+  assert.equal(current.created.length, 0)
+  current.host.vault.createFolder = createFolder
+  await current.store.create('Plans/Board-卡片/Card.md', '# Card', () => undefined)
+  assert.deepEqual(current.createdFolders, ['Plans', 'Plans/Board-卡片'])
+  assert.deepEqual(current.created, ['Plans/Board-卡片/Card.md'])
+})
 
 test('conversion guards unsaved editors and final content changes', async () => {
   for (const change of ['none', 'unsaved', 'final', 'replacement', 'disposed']) {

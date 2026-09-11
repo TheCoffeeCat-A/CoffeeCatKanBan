@@ -1,6 +1,6 @@
 import { generateKeyBetween } from 'fractional-indexing'
 import { createNote } from './markdown'
-import { hasControlCharacter, invalid, isIsoDate, readBoard, readTask, validateFolder, type Board, type Task } from './model'
+import { hasControlCharacter, invalid, isIsoDate, readBoard, readTask, validateFolder, validateNotePath, type Board, type Task } from './model'
 
 const forbiddenFileNameChars = new Set('\\/:*?"<>|#^[]%')
 
@@ -11,6 +11,7 @@ function fileNameStem(title: string): string {
 export interface NewBoard {
   readonly title: string
   readonly folder: string
+  // Relative to the board directory, empty selects a folder named after the board file
   readonly taskFolder: string
 }
 
@@ -41,7 +42,22 @@ export function availableNotePath(title: string, folder: string, existingPaths: 
   return invalid('Too many notes with the same title')
 }
 
+// Keep new cards in a child folder beside the board, including legacy flat destinations
+// type: (Pick<Board, 'path' | 'taskFolder'>) => string
+export function taskFolderForBoard(board: Pick<Board, 'path' | 'taskFolder'>): string {
+  validateNotePath(board.path)
+  const parent = board.path.split('/').slice(0, -1).join('/')
+  const folder = validateFolder(board.taskFolder)
+  if (folder && (!parent || folder.startsWith(`${parent}/`))) return folder
+  return validateFolder(`${board.path.slice(0, -3)}-卡片`)
+}
+
+// Persist the resolved vault-relative card folder for a newly created board
+// type: (NewBoard, string, string) => string
 export function newBoardNote(input: NewBoard, id: string, path: string): string {
+  const subfolder = validateFolder(input.taskFolder)
+  const parent = path.split('/').slice(0, -1).join('/')
+  const taskFolder = subfolder ? [parent, subfolder].filter(Boolean).join('/') : ''
   const properties = {
     kanban_kind: 'board', kanban_schema: 1, kanban_id: id, kanban_title: creationTitle(input.title),
     kanban_columns: ['todo', 'doing', 'done'],
@@ -49,7 +65,7 @@ export function newBoardNote(input: NewBoard, id: string, path: string): string 
     kanban_column_doing_title: '\u8fdb\u884c\u4e2d',
     kanban_column_done_title: '\u5df2\u5b8c\u6210',
     kanban_default_column: 'todo', kanban_done_column: 'done',
-    kanban_new_task_folder: validateFolder(input.taskFolder),
+    kanban_new_task_folder: taskFolderForBoard({ path, taskFolder }),
   }
   readBoard(properties, path)
   return createNote(properties)

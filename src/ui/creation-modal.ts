@@ -1,12 +1,13 @@
 import { Modal, Notice, Setting, type App } from 'obsidian'
 import type { Board } from '../domain/model'
 import type { KanbanService } from '../contracts'
+import { taskFolderForBoard } from '../domain/creation'
 import { defaultSettings, type KanbanSettings } from '../domain/settings'
 
 export class CreationModal extends Modal {
   private title = ''
   private folder = ''
-  private taskFolder = 'Tasks'
+  private taskFolder = ''
   private columnId = ''
   private due = ''
   private dirty = false
@@ -35,7 +36,7 @@ export class CreationModal extends Modal {
       input.inputEl.focus()
     })
     if (this.board) {
-      new Setting(fields).setName('保存位置').setDesc(this.board.taskFolder || '库根目录')
+      new Setting(fields).setName('保存位置').setDesc(taskFolderForBoard(this.board))
       new Setting(fields).setName('状态').addDropdown((input) => {
         for (const column of this.board!.columns) input.addOption(column.id, column.title)
         input.setValue(this.columnId).onChange((value) => { this.columnId = value; this.dirty = true })
@@ -49,7 +50,7 @@ export class CreationModal extends Modal {
       new Setting(fields).setName('看板文件夹').setDesc('相对于库根目录, 留空使用根目录').addText((input) => {
         input.setValue(this.folder).onChange((value) => { this.folder = value; this.dirty = true })
       })
-      new Setting(fields).setName('新任务文件夹').setDesc('相对于库根目录').addText((input) => {
+      new Setting(fields).setName('新任务文件夹').setDesc('相对于看板所在目录, 留空自动使用 "看板文件名-卡片" 子文件夹').addText((input) => {
         input.setValue(this.taskFolder).onChange((value) => { this.taskFolder = value; this.dirty = true })
       })
     }

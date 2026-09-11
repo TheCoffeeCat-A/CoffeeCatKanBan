@@ -65,10 +65,10 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
         void this.openForFile(file)
       }))
     }))
-    // Open task notes in their board view when they are selected in the vault
+    // Let Obsidian open task and ordinary notes; only board notes switch to the board view
     // type: (TFile | null) => void
     this.registerEvent(this.app.workspace.on('file-open', (file) => {
-      if (!(file instanceof TFile) || !this.isBoardOrTask(file)) return
+      if (!(file instanceof TFile) || !this.isBoard(file)) return
       void this.openForFile(file)
     }))
     this.registerEvent(this.app.vault.on('create', (file) => { repository.invalidate(file instanceof TFile ? file.path : undefined); this.scheduleRefresh() }))
@@ -106,6 +106,13 @@ export default class CoffeeCatKanBanPlugin extends Plugin {
     if (file.extension !== 'md') return false
     const kind: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.kanban_kind
     return kind === 'board' || kind === 'task'
+  }
+
+  // Check whether a vault file is a CoffeeCatKanBan board
+  // type: (TFile) => boolean
+  private isBoard(file: TFile): boolean {
+    if (file.extension !== 'md') return false
+    return this.app.metadataCache.getFileCache(file)?.frontmatter?.kanban_kind === 'board'
   }
 
   // Check whether a vault file is a CoffeeCatKanBan task

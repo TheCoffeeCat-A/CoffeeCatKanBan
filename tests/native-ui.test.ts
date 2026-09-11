@@ -103,7 +103,7 @@ class SettingStub {
   constructor(container: ElementStub) { container.settings.push(this); this.descEl = container.createDiv() }
   setDisabled(value: boolean): this { this.disabled = value; return this }
   setName(value: string): this { this.name = value; return this }
-  setDesc(_value: string): this { return this }
+  setDesc(value: string): this { this.descEl.setText(value); return this }
   addText(callback: (input: ControlStub) => void): this { return this.add(callback) }
   addDropdown(callback: (input: ControlStub) => void): this { return this.add(callback) }
   addToggle(callback: (input: ControlStub) => void): this { return this.add(callback) }
@@ -281,6 +281,18 @@ test('global defaults apply to new views and board drafts but restored state win
   assert.equal(row(modal, '新任务文件夹').controls[0]!.value, 'Work/Tasks')
 })
 
+test('creation explains child folders and shows the resolved destination for legacy boards', () => {
+  const creation = new Creation({}, {}, () => undefined)
+  creation.open()
+  assert.equal(row(creation, '新任务文件夹').controls[0]!.value, '')
+  assert.match(row(creation, '新任务文件夹').descEl.textContent, /相对于看板所在目录/)
+  for (const folder of ['', 'Plans', 'Tasks', 'Plans/Custom']) {
+    const modal = new Creation({}, {}, () => undefined, { ...board, path: 'Plans/Board.md', taskFolder: folder })
+    modal.open()
+    assert.equal(row(modal, '保存位置').descEl.textContent, folder === 'Plans/Custom' ? folder : 'Plans/Board-卡片')
+  }
+})
+
 test('conversion requires preview, prevents duplicate submissions and rejects closed controls', async () => {
   let previews = 0
   let writes = 0
@@ -365,21 +377,22 @@ test('calendar date creation prefills and submits the selected day', async () =>
   let submitted: unknown
   const service = {
     scan: async () => ({ boards: [board], tasks: [], diagnostics: [] }), hasUndo: () => false,
-    createTask: async (input: unknown) => { submitted = input },
+    createTask: async (input: unknown) => { submitted = input; return taskFixture('leap-task') },
   }
   const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, service, () => undefined)
   await view.onOpen()
   await view.setState({ boardId: board.id, mode: 'calendar', calendarMonth: '2028-02' }, {})
   await nextTurn()
-  const create = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '新建任务: 2028-02-29')!
+  const create = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '2028-02-29')!
   assert.ok(create)
-  create.listeners.get('click')!({})
+  create.listeners.get('dblclick')!({})
   const modal = ModalStub.last!
   assert.equal(row(modal, '截止日期').controls[0]!.value, '2028-02-29')
   row(modal, '标题').controls[0]!.change('Leap task')
   button(modal, '创建').action()
   await nextTurn()
   assert.deepEqual(submitted, { boardId: board.id, title: 'Leap task', columnId: 'todo', due: '2028-02-29' })
+  assert.equal(modal.closed, true)
 })
 
 test('sort direction persists and clear restores disabled manual direction', async () => {
