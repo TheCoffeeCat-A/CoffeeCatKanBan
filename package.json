@@ -1,6 +1,6 @@
 {
   "name": "coffeecat-kanban",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "private": true,
   "type": "module",
   "description": "Native Obsidian task boards for CoffeeCatKanBan",
