@@ -45,7 +45,7 @@ export function queryTasks(tasks: readonly Task[], boardId: string, query: TaskQ
     if (query.due === 'undated' && task.due !== undefined) return false
     if (query.due === 'today' && task.due !== today) return false
     if (query.due === 'overdue' && (!isIsoDate(today) || !task.due || task.due >= today || task.column === doneColumn)) return false
-    const searchable = [task.title, ...task.tags, ...task.assignees, task.searchText ?? ''].join('\n').toLocaleLowerCase()
+    const searchable = [task.title, task.type ?? '', ...task.tags, ...task.assignees, task.searchText ?? ''].join('\n').toLocaleLowerCase()
     return words.every((word) => searchable.includes(word))
   })
   return filtered.sort((left, right) => {

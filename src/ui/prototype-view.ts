@@ -101,10 +101,6 @@ export class PrototypeView extends ItemView {
     void this.repository.scan(force).then((catalogue) => {
       if (this.closed || generation !== this.generation) return
       this.catalogue = catalogue
-      if (!this.boardId && catalogue.boards.length === 1) {
-        this.boardId = catalogue.boards[0]!.id
-        this.saveState()
-      }
       this.render(catalogue)
     }).catch((reason: unknown) => {
       if (this.closed || generation !== this.generation) return
@@ -232,23 +228,11 @@ export class PrototypeView extends ItemView {
     this.renderGeneration += 1
     this.searchInput = undefined
     this.contentEl.empty()
+    const board = catalogue.boards.find((entry) => entry.id === this.boardId)
     const header = this.contentEl.createDiv({ cls: 'cckb-toolbar' })
-    header.createEl('h1', { text: 'CoffeeCatKanBan' })
-    const select = header.createEl('select', { attr: { 'aria-label': '看板' } })
-    select.createEl('option', { value: '', text: '选择看板' })
-    for (const board of catalogue.boards) select.createEl('option', { value: board.id, text: board.title })
-    select.value = this.boardId
-    select.addEventListener('change', () => {
-      this.boardId = select.value
-      this.listScroll.clear()
-      this.selectedTasks.clear()
-      this.query = defaultQuery()
-      this.saveState()
-      this.render(catalogue)
-    })
+    header.createEl('h1', { text: board?.title ?? 'CoffeeCatKanBan' })
     iconButton(header, 'folder-plus', '新建看板', () => this.createBoard())
     iconButton(header, 'refresh-cw', '重新读取', () => this.refresh(true))
-    const board = catalogue.boards.find((entry) => entry.id === this.boardId)
     if (board) {
       iconButton(header, 'file-text', '打开看板笔记', () => this.openNote(board.path))
       iconButton(header, 'list-ordered', '修复列顺序', () => {

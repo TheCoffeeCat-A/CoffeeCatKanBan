@@ -22,10 +22,18 @@ export class TaskPropertyModal extends Modal {
     this.contentEl.addClass('cckb-modal')
     const { task, board } = this.draft
     const fields = this.contentEl.createEl('fieldset', { cls: 'cckb-form-fields' })
+    fields.createEl('h3', { cls: 'cckb-property-section-title', text: '\u57fa\u672c\u4fe1\u606f' })
     new Setting(fields).setName('标题').addText((input) => {
       input.setValue(task.title).onChange((value) => {
         if (value === task.title) delete this.patch.kanban_title
         else this.patch.kanban_title = value
+      })
+    })
+    new Setting(fields).setName('\u7c7b\u578b').setDesc('\u663e\u793a\u5728\u5361\u7247\u53f3\u4e0a\u89d2').addText((input) => {
+      input.setValue(task.type ?? '').onChange((value) => {
+        const type = value.trim()
+        if (type === (task.type ?? '')) delete this.patch.kanban_type
+        else this.patch.kanban_type = type || undefined
       })
     })
     new Setting(fields).setName('状态').addDropdown((input) => {
@@ -62,6 +70,7 @@ export class TaskPropertyModal extends Modal {
         else this.patch.kanban_assignees = assignees
       })
     })
+    fields.createEl('h3', { cls: 'cckb-property-section-title', text: '\u5c5e\u6027' })
     new Setting(fields).setName('高优先级').addToggle((input) => {
       input.setValue(task.priority).onChange((value) => {
         if (value === task.priority) delete this.patch.kanban_priority
@@ -74,6 +83,7 @@ export class TaskPropertyModal extends Modal {
         else this.patch.kanban_archived = value
       })
     })
+    fields.createEl('h3', { cls: 'cckb-property-section-title', text: '\u5173\u8054\u7b14\u8bb0' })
     const errors = this.contentEl.createDiv({ cls: 'cckb-error', attr: { role: 'alert' } })
     this.disposeContent = renderNoteContent(this.app, this.contentEl, this.draft, () => this.live && !this.saving, (path) => {
       if (Object.keys(this.patch).length) {
@@ -94,7 +104,8 @@ export class TaskPropertyModal extends Modal {
         if (this.live) errors.setText(reason instanceof Error ? reason.message : '关联失败')
       }).finally(() => { this.saving = false; fields.disabled = false })
     })
-    new Setting(fields).addButton((button) => {
+    const actions = this.contentEl.createDiv({ cls: 'cckb-property-actions' })
+    new Setting(actions).addButton((button) => {
       button.setButtonText('打开笔记').onClick(() => {
         void this.app.workspace.openLinkText(task.path, '', 'tab').catch((reason: unknown) => {
           if (this.live) errors.setText(reason instanceof Error ? reason.message : '无法打开笔记')

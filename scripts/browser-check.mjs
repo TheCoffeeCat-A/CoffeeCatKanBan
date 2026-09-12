@@ -119,7 +119,7 @@ try {
     const last = cards.at(-1);
     const nextId = 'task-' + (Number(last.dataset.taskId.slice(5)) + 3);
     if (document.querySelector('[data-task-id="' + nextId + '"]')) throw Error('Test must cross an unmounted row');
-    last.querySelector('.cckb-drag-handle').focus();
+    last.querySelector('.cckb-task-link').focus();
     return nextId;
   })()`)
   await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
@@ -136,7 +136,7 @@ try {
     const source = document.querySelector('.cckb-card');
     const target = document.querySelector('[data-column-id="doing"]');
     const transfer = new DataTransfer();
-    source.querySelector('.cckb-drag-handle').dispatchEvent(new DragEvent('dragstart', { bubbles:true, cancelable:true, dataTransfer:transfer }));
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles:true, cancelable:true, dataTransfer:transfer }));
     const bounds = target.querySelector('.cckb-add-task').getBoundingClientRect();
     target.dispatchEvent(new DragEvent('drop', { bubbles:true, cancelable:true, dataTransfer:transfer, clientY:bounds.bottom+8 }));
     return cckbTest.actions()[0];
@@ -148,12 +148,12 @@ try {
   await settle()
   await evaluate(`(() => {
     const source = document.querySelector('.cckb-card');
-    source.querySelector('.cckb-drag-handle').dispatchEvent(new DragEvent('dragstart', { bubbles:true, cancelable:true, dataTransfer:new DataTransfer() }));
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles:true, cancelable:true, dataTransfer:new DataTransfer() }));
     source.closest('.cckb-virtual-viewport').scrollTop = 30000;
   })()`)
   await settle()
   assert.equal(await evaluate("document.querySelector('[data-task-id=" + '"task-0"' + "]')?.classList.contains('cckb-dragging')"), true)
-  await evaluate("document.querySelector('.cckb-dragging .cckb-drag-handle').dispatchEvent(new DragEvent('dragend', { bubbles:true }))")
+  await evaluate("document.querySelector('.cckb-dragging').dispatchEvent(new DragEvent('dragend', { bubbles:true }))")
   await settle()
   assert.equal(await evaluate("Boolean(document.querySelector('[data-task-id=" + '"task-0"' + "]'))"), false)
   report.checks.push('Drag source stays mounted until dragend, then releases outside the viewport')

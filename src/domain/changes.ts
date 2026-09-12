@@ -3,7 +3,7 @@ import { parseNote, propertiesOf } from './markdown'
 import { assertMembership, invalid, KanbanError, readTask, type Board, type Properties } from './model'
 
 export const editableFields = [
-  'kanban_title', 'kanban_column', 'kanban_order', 'kanban_previous_column', 'kanban_due',
+  'kanban_title', 'kanban_type', 'kanban_column', 'kanban_order', 'kanban_previous_column', 'kanban_due',
   'kanban_priority', 'kanban_archived', 'kanban_assignees', 'tags',
 ] as const
 

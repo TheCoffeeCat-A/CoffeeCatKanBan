@@ -11,9 +11,9 @@ export class BoardDrag {
   constructor(private readonly boardId: string, private readonly enabled: boolean,
     private readonly available: () => boolean, private readonly act: (task: Task, action: TaskAction) => void) {}
 
-  bindSource(handle: HTMLElement, card: HTMLElement, task: Task): void {
-    handle.draggable = this.enabled
-    handle.addEventListener('dragstart', (event) => {
+  bindSource(card: HTMLElement, task: Task): void {
+    card.draggable = this.enabled
+    card.addEventListener('dragstart', (event) => {
       if (!this.active || !this.enabled || !this.available() || task.boardId !== this.boardId || !event.dataTransfer) {
         event.preventDefault()
         return
@@ -25,7 +25,7 @@ export class BoardDrag {
       event.dataTransfer.effectAllowed = 'move'
       card.addClass('cckb-dragging')
     })
-    handle.addEventListener('dragend', () => this.clear())
+    card.addEventListener('dragend', () => this.clear())
   }
 
   bindTarget(element: HTMLElement, columnId: string, anchor?: Task): void {

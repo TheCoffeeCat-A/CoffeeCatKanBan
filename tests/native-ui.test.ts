@@ -281,6 +281,18 @@ test('global defaults apply to new views and board drafts but restored state win
   assert.equal(row(modal, '新任务文件夹').controls[0]!.value, 'Work/Tasks')
 })
 
+test('a view with one board stays on the board home until a board card is chosen', async () => {
+  const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, {
+    scan: async () => ({ boards: [board], tasks: [], diagnostics: [] }), hasUndo: () => false,
+  }, () => undefined)
+  await view.onOpen()
+  await nextTurn()
+  assert.equal(view.getState().boardId, '')
+  assert.ok(view.contentEl.descendants().some((element) => element.tagName === 'h1' && element.textContent === 'CoffeeCatKanBan'))
+  assert.ok(view.contentEl.descendants().some((element) => element.textContent === '我的看板'))
+  assert.equal(view.contentEl.descendants().some((element) => element.tagName === 'select'), false)
+})
+
 test('creation explains child folders and shows the resolved destination for legacy boards', () => {
   const creation = new Creation({}, {}, () => undefined)
   creation.open()
@@ -399,6 +411,7 @@ test('sort direction persists and clear restores disabled manual direction', asy
   const service = { scan: async () => ({ boards: [board], tasks: [], diagnostics: [] }), hasUndo: () => false }
   const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, service, () => undefined)
   await view.onOpen()
+  await view.setState({ boardId: board.id }, {})
   await nextTurn()
   const control = (label: string) => view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === label)!
   const sort = control('显示排序')
@@ -488,6 +501,7 @@ test('file menus open confirmation without writing and closed views reject stale
     copyTask: async () => { copies += 1; return taskFixture('copy') },
   }, () => undefined)
   await view.onOpen()
+  await view.setState({ boardId: board.id }, {})
   await nextTurn()
   const more = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u4efb\u52a1\u64cd\u4f5c: source')!
   more.listeners.get('click')!({})
@@ -588,8 +602,10 @@ test('native board groups cards, toggles archived tasks and preserves data-view 
     scan: async () => catalogue, hasUndo: () => false,
   }, () => undefined)
   await view.onOpen()
+  await view.setState({ boardId: board.id }, {})
   await nextTurn()
   assert.equal(view.getState().boardId, board.id)
+  assert.ok(view.contentEl.descendants().some((element) => element.tagName === 'h1' && element.textContent === board.title))
   assert.equal(view.canCreateTask(), true)
   const elements = view.contentEl.descendants()
   assert.equal(elements.filter((entry) => entry.attributes.has('data-column-id')).length, 3)
@@ -605,7 +621,7 @@ test('native board groups cards, toggles archived tasks and preserves data-view 
   assert.equal(view.contentEl.descendants().filter((entry) => entry.tagName === 'table').length, 1)
   assert.deepEqual(view.contentEl.descendants().filter((entry) => entry.tagName === 'th').map((entry) => entry.textContent),
     ['任务', '状态', '截止日期', '优先级', '标签', '负责人', '归档', '操作'])
-  assert.ok(stateSaves >= 3)
+  assert.ok(stateSaves >= 2)
 })
 
 test('batch actions use only visible selections and clear them after confirmation', async () => {
@@ -620,6 +636,7 @@ test('batch actions use only visible selections and clear them after confirmatio
     },
   }, () => undefined)
   await view.onOpen()
+  await view.setState({ boardId: board.id }, {})
   await nextTurn()
   const firstSelect = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '选择任务: first')!
   firstSelect.checked = true
@@ -711,6 +728,7 @@ async function actionView(additionalTasks: Task[] = []) {
     actOnTask: async (task: Task, action: TaskAction) => { actions.push({ task, action }) },
   }, () => undefined)
   await view.onOpen()
+  await view.setState({ boardId: board.id }, {})
   await nextTurn()
   return { view, first, second, actions }
 }
@@ -718,8 +736,8 @@ async function actionView(additionalTasks: Task[] = []) {
 test('dragging a card uses its original snapshot and a target anchor without rewriting UI data', async () => {
   const { view, actions } = await actionView()
   const cards = view.contentEl.descendants().filter((element) => element.tagName === 'article')
-  const handle = cards[0]!.descendants().find((element) => element.attributes.get('aria-label') === '\u62d6\u52a8\u4efb\u52a1')!
-  handle.listeners.get('dragstart')!(dragEvent())
+  const source = cards[0]!
+  source.listeners.get('dragstart')!(dragEvent())
   const drop = dragEvent(90)
   cards[1]!.listeners.get('drop')!(drop)
   await nextTurn()
@@ -739,8 +757,8 @@ test('dropping onto the source is a no-op and external drag payloads cannot move
   const cards = view.contentEl.descendants().filter((element) => element.tagName === 'article')
   cards[1]!.listeners.get('drop')!(dragEvent())
   assert.equal(actions.length, 0)
-  const handle = cards[0]!.descendants().find((element) => element.attributes.get('aria-label') === '\u62d6\u52a8\u4efb\u52a1')!
-  handle.listeners.get('dragstart')!(dragEvent())
+  const source = cards[0]!
+  source.listeners.get('dragstart')!(dragEvent())
   const drop = dragEvent()
   cards[0]!.listeners.get('drop')!(drop)
   assert.equal(drop.stopped, true)
@@ -758,7 +776,7 @@ test('search filters only result elements and non-manual sorts disable drag and 
   const sort = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u663e\u793a\u6392\u5e8f')!
   sort.value = 'due'
   sort.listeners.get('change')!()
-  const handle = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u62d6\u52a8\u4efb\u52a1')!
+  const handle = view.contentEl.descendants().find((element) => element.dataset.taskId === 'second')!
   assert.equal(handle.draggable, false)
   const start = dragEvent()
   handle.listeners.get('dragstart')!(start)
@@ -767,6 +785,21 @@ test('search filters only result elements and non-manual sorts disable drag and 
   more.listeners.get('click')!({})
   assert.equal(MenuStub.last!.items.find((item) => item.title === '\u4e0a\u79fb')!.disabled, true)
   assert.equal(MenuStub.last!.items.find((item) => item.title === '\u4e0b\u79fb')!.disabled, true)
+})
+
+test('status buttons start default tasks and complete in-progress tasks', async () => {
+  const { view, actions } = await actionView()
+  const start = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u5f00\u59cb: first')!
+  start.listeners.get('click')!({})
+  await nextTurn()
+  const complete = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u5b8c\u6210: second')!
+  complete.listeners.get('click')!({})
+  await nextTurn()
+  assert.deepEqual(actions.map(({ task, action }) => [task.id, action]), [
+    ['first', { kind: 'move', columnId: 'doing' }],
+    ['second', { kind: 'complete', completed: true }],
+  ])
+  await view.onClose()
 })
 
 test('menu and keyboard actions share the task action service and stale menus stop after view close', async () => {
@@ -802,6 +835,7 @@ test('task property form normalizes tags and assignees and keeps drafts after fa
     },
   }, () => undefined)
   modal.open()
+  row(modal, '\u7c7b\u578b').controls[0]!.change('Feature')
   row(modal, '\u6807\u7b7e').controls[0]!.change('#release,release,project/demo')
   row(modal, '\u8d1f\u8d23\u4eba').controls[0]!.change('Alice, Bob, Alice')
   const save = button(modal, '\u4fdd\u5b58\u5c5e\u6027')
@@ -814,11 +848,12 @@ test('task property form normalizes tags and assignees and keeps drafts after fa
   save.action()
   await nextTurn()
   assert.equal(modal.closed, true)
+  assert.deepEqual(committed!.fields.find((field) => field.key === 'kanban_type')!.after, { present: true, value: 'Feature' })
   assert.deepEqual(committed!.fields.find((field) => field.key === 'tags')!.after, { present: true, value: ['release', 'project/demo'] })
   assert.deepEqual(committed!.fields.find((field) => field.key === 'kanban_assignees')!.after, { present: true, value: ['Alice', 'Bob'] })
 })
 
-test('failed quick actions release the UI lock and double clicks do not enqueue duplicate writes', async () => {
+test('status actions move tasks forward and failed actions release the UI lock', async () => {
   const task = taskFixture('first')
   let attempts = 0
   const view = new View({ app: { workspace: { requestSaveLayout: () => undefined } } }, {
@@ -826,15 +861,16 @@ test('failed quick actions release the UI lock and double clicks do not enqueue 
     actOnTask: async () => { attempts += 1; if (attempts === 1) throw new Error('Disk unavailable') },
   }, () => undefined)
   await view.onOpen()
+  await view.setState({ boardId: board.id }, {})
   await nextTurn()
-  const findComplete = () => view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u5b8c\u6210: first')!
-  const complete = findComplete()
-  complete.listeners.get('click')!({})
-  complete.listeners.get('click')!({})
+  const findStart = () => view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u5f00\u59cb: first')!
+  const start = findStart()
+  start.listeners.get('click')!({})
+  start.listeners.get('click')!({})
   await nextTurn()
   assert.equal(attempts, 1)
   assert.equal(view.contentEl.attributes.get('aria-busy'), 'false')
-  findComplete().listeners.get('click')!({})
+  findStart().listeners.get('click')!({})
   await nextTurn()
   assert.equal(attempts, 2)
 })
@@ -860,7 +896,7 @@ test('dropping between cards targets the gap instead of the column top in the sa
     const { view, actions } = await actionView([upper, lower])
     const elements = view.contentEl.descendants()
     const source = elements.find((element) => element.dataset.taskId === 'first')!
-    const handle = source.descendants().find((element) => element.draggable)!
+    const handle = source
     const column = elements.find((element) => element.attributes.get('data-column-id') === columnId)!
     const upperCard = elements.find((element) => element.dataset.taskId === upper.id)!
     const lowerCard = elements.find((element) => element.dataset.taskId === lower.id)!
@@ -892,7 +928,7 @@ test('dropping below add-task targets the column end, including an empty column'
   for (const columnId of ['doing', 'done']) {
     const { view, actions } = await actionView()
     const source = view.contentEl.descendants().find((element) => element.dataset.taskId === 'first')!
-    const handle = source.descendants().find((element) => element.attributes.get('aria-label') === '\u62d6\u52a8\u4efb\u52a1')!
+    const handle = source
     const column = view.contentEl.descendants().find((element) => element.attributes.get('data-column-id') === columnId)!
     assert.ok(column.querySelector('.cckb-add-task'))
     handle.listeners.get('dragstart')!(dragEvent())
@@ -917,7 +953,7 @@ test('expanded column targets still reject dragging in non-manual sort mode', as
   const sort = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u663e\u793a\u6392\u5e8f')!
   sort.value = 'title'
   sort.listeners.get('change')!()
-  const handle = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u62d6\u52a8\u4efb\u52a1')!
+  const handle = view.contentEl.descendants().find((element) => element.dataset.taskId === 'first')!
   const column = view.contentEl.descendants().find((element) => element.attributes.get('data-column-id') === 'done')!
   handle.listeners.get('dragstart')!(dragEvent())
   const hover = dragEvent(700)

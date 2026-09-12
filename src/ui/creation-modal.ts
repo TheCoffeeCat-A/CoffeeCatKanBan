@@ -10,6 +10,7 @@ export class CreationModal extends Modal {
   private taskFolder = ''
   private columnId = ''
   private due = ''
+  private type = ''
   private dirty = false
   private saving = false
   private live = false
@@ -45,6 +46,9 @@ export class CreationModal extends Modal {
         input.inputEl.type = 'date'
         input.setValue(this.due)
         input.onChange((value) => { this.due = value; this.dirty = true })
+      })
+      new Setting(fields).setName('\u7c7b\u578b').setDesc('\u663e\u793a\u5728\u5361\u7247\u53f3\u4e0a\u89d2').addText((input) => {
+        input.setValue(this.type).onChange((value) => { this.type = value; this.dirty = true })
       })
     } else {
       new Setting(fields).setName('看板文件夹').setDesc('相对于库根目录, 留空使用根目录').addText((input) => {
@@ -107,6 +111,7 @@ export class CreationModal extends Modal {
       const task = await this.repository.createTask({
         boardId: this.board.id, title: this.title, columnId: this.columnId,
         ...(this.due ? { due: this.due } : {}),
+        ...(this.type.trim() ? { type: this.type.trim() } : {}),
       })
       return { boardId: this.board.id, taskId: task.id }
     }
