@@ -615,7 +615,11 @@
   background: color-mix(in srgb, var(--interactive-accent) 44%, var(--background-secondary));
 }
 
-.cckb-prototype .cckb-dragging { opacity: 0.55; }
+.cckb-prototype .cckb-dragging {
+  opacity: 0.5;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  transform: translateY(-1px);
+}
 .cckb-prototype .cckb-drop-before { box-shadow: 0 -3px 0 var(--interactive-accent); }
 .cckb-prototype .cckb-drop-after { box-shadow: 0 3px 0 var(--interactive-accent); }
 .cckb-prototype .cckb-drop-column { border-top-color: var(--interactive-accent); }
