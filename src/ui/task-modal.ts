@@ -20,33 +20,13 @@ export class TaskPropertyModal extends Modal {
     this.live = true
     this.titleEl.setText(this.draft.task.title)
     this.contentEl.addClass('cckb-modal')
-    const { task, board } = this.draft
+    const { task } = this.draft
     const fields = this.contentEl.createEl('fieldset', { cls: 'cckb-form-fields' })
     fields.createEl('h3', { cls: 'cckb-property-section-title', text: '\u57fa\u672c\u4fe1\u606f' })
     new Setting(fields).setName('标题').addText((input) => {
       input.setValue(task.title).onChange((value) => {
         if (value === task.title) delete this.patch.kanban_title
         else this.patch.kanban_title = value
-      })
-    })
-    new Setting(fields).setName('\u7c7b\u578b').setDesc('\u663e\u793a\u5728\u5361\u7247\u53f3\u4e0a\u89d2').addText((input) => {
-      input.setValue(task.type ?? '').onChange((value) => {
-        const type = value.trim()
-        if (type === (task.type ?? '')) delete this.patch.kanban_type
-        else this.patch.kanban_type = type || undefined
-      })
-    })
-    new Setting(fields).setName('状态').addDropdown((input) => {
-      for (const column of board.columns) input.addOption(column.id, column.title)
-      input.setValue(task.column).onChange((value) => {
-        delete this.patch.kanban_column
-        delete this.patch.kanban_previous_column
-        delete this.patch.kanban_order
-        if (value !== task.column) {
-          this.patch.kanban_column = value
-          this.patch.kanban_order = undefined
-          if (value === board.doneColumn) this.patch.kanban_previous_column = task.column
-        }
       })
     })
     new Setting(fields).setName('截止日期').addText((input) => {

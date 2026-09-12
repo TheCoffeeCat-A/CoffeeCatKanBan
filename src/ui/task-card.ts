@@ -20,9 +20,8 @@ export function renderTaskCard(container: HTMLElement, task: Task, board: Board,
     event.stopPropagation()
     interaction.act(task, { kind: 'reorder', direction: event.key === 'ArrowUp' ? -1 : 1 })
   })
-  if (task.type || task.tags.length) {
+  if (task.tags.length) {
     const tags = heading.createDiv({ cls: 'cckb-card-tags' })
-    if (task.type) tags.createSpan({ cls: 'cckb-type-tag', text: task.type })
     for (const tag of task.tags) tags.createSpan({ cls: 'cckb-tag', text: tag })
   }
   const more = iconButton(heading, 'more-horizontal', `任务操作: ${task.title}`, (event) => showTaskMenu(event, task, board, allTasks, interaction))
@@ -39,7 +38,10 @@ export function renderTaskCard(container: HTMLElement, task: Task, board: Board,
   }
   if (task.priority) setIcon(metadata.createSpan({ cls: 'cckb-priority', attr: { 'aria-label': '高优先级', title: '高优先级' } }), 'flag')
   if (task.archived) metadata.createSpan({ text: '已归档' })
-  if (task.assignees.length) card.createDiv({ cls: 'cckb-assignees', text: task.assignees.join(', ') })
+  if (task.assignees.length) {
+    card.addClass('cckb-card-has-assignee')
+    card.createDiv({ cls: 'cckb-assignees', text: task.assignees.join(', ') })
+  }
   const footer = card.createDiv({ cls: 'cckb-card-tools' })
   const taskIndex = board.columns.findIndex((column) => column.id === task.column)
   const inProgress = task.column !== board.defaultColumn && task.column !== board.doneColumn

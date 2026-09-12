@@ -12,8 +12,7 @@ export function copiedTaskNote(content: string, sourcePath: string, id: string, 
   if (!source) return invalid('This note has no task frontmatter')
   const task = readTask(source.properties, sourcePath)
   const properties = propertiesOf(newTaskNote({ boardId: task.boardId, title: task.title,
-    columnId: task.column, ...(task.due === undefined ? {} : { due: task.due }),
-    ...(task.type === undefined ? {} : { type: task.type }) }, id, path, board, tasks))
+    columnId: task.column, ...(task.due === undefined ? {} : { due: task.due }) }, id, path, board, tasks))
   return createNote({ ...properties, kanban_priority: task.priority,
     kanban_assignees: [...task.assignees], tags: [...task.tags],
     ...(task.previousColumn === undefined ? {} : { kanban_previous_column: task.previousColumn }),

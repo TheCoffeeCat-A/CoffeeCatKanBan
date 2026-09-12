@@ -20,7 +20,6 @@ export interface NewTask {
   readonly title: string
   readonly columnId?: string
   readonly due?: string
-  readonly type?: string
 }
 
 export function creationTitle(value: string): string {
@@ -83,7 +82,6 @@ export function newTaskNote(input: NewTask, id: string, path: string, board: Boa
     kanban_title: creationTitle(input.title), kanban_column: column,
     kanban_order: generateKeyBetween(keys.at(-1) ?? null, null),
     kanban_priority: false, kanban_archived: false, kanban_assignees: [], tags: [],
-    ...(input.type?.trim() ? { kanban_type: input.type.trim() } : {}),
     ...(input.due === undefined ? {} : { kanban_due: input.due }),
   }
   readTask(properties, path)

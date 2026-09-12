@@ -430,17 +430,6 @@
   overflow: hidden;
 }
 
-.cckb-prototype .cckb-type-tag {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 20%, var(--background-secondary));
-  padding: 3px 9px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
 .cckb-prototype .cckb-tag {
   overflow-wrap: anywhere;
   color: var(--tag-color);
@@ -461,7 +450,14 @@
 }
 
 .cckb-prototype .cckb-assignees {
-  margin-top: var(--size-4-2);
+  width: 100%;
+  margin-top: auto;
+  padding-top: var(--size-4-2);
+  text-align: center;
+}
+
+.cckb-prototype .cckb-card-has-assignee .cckb-card-tools {
+  margin-top: 0;
 }
 
 .cckb-prototype .cckb-add-task {

@@ -30,7 +30,6 @@ export interface Task {
   readonly path: string
   readonly boardId: string
   readonly title: string
-  readonly type?: string
   readonly column: string
   readonly order?: string
   readonly previousColumn?: string
@@ -158,11 +157,9 @@ export function readTask(properties: Properties, path: string): Task {
   const order = optionalText(properties, 'kanban_order')
   const previousColumn = optionalText(properties, 'kanban_previous_column')
   const due = optionalText(properties, 'kanban_due')
-  const taskType = optionalText(properties, 'kanban_type')
   if (due !== undefined && !isIsoDate(due)) invalid('Invalid due date')
   return Object.freeze({
     id, path, boardId: properties.kanban_board, title: title(properties, path),
-    ...(taskType === undefined ? {} : { type: taskType }),
     column: columnId(text(properties, 'kanban_column')),
     ...(order === undefined ? {} : { order: validateOrder(order) }),
     ...(previousColumn === undefined ? {} : { previousColumn: columnId(previousColumn) }),

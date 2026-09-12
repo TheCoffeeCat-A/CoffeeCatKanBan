@@ -788,7 +788,10 @@ test('search filters only result elements and non-manual sorts disable drag and 
 })
 
 test('status buttons start default tasks and complete in-progress tasks', async () => {
-  const { view, actions } = await actionView()
+  const { view, actions } = await actionView([{ ...taskFixture('owner', 'doing'), assignees: ['Owner'] }])
+  const ownerCard = view.contentEl.descendants().find((element) => element.dataset.taskId === 'owner')!
+  assert.ok(ownerCard.className.split(' ').includes('cckb-card-has-assignee'))
+  assert.equal(ownerCard.descendants().find((element) => element.className === 'cckb-assignees')?.textContent, 'Owner')
   const start = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u5f00\u59cb: first')!
   start.listeners.get('click')!({})
   await nextTurn()
@@ -835,7 +838,8 @@ test('task property form normalizes tags and assignees and keeps drafts after fa
     },
   }, () => undefined)
   modal.open()
-  row(modal, '\u7c7b\u578b').controls[0]!.change('Feature')
+  assert.equal(modal.contentEl.allSettings().some((setting) => setting.name === '\u7c7b\u578b'), false)
+  assert.equal(modal.contentEl.allSettings().some((setting) => setting.name === '\u72b6\u6001'), false)
   row(modal, '\u6807\u7b7e').controls[0]!.change('#release,release,project/demo')
   row(modal, '\u8d1f\u8d23\u4eba').controls[0]!.change('Alice, Bob, Alice')
   const save = button(modal, '\u4fdd\u5b58\u5c5e\u6027')
@@ -848,7 +852,6 @@ test('task property form normalizes tags and assignees and keeps drafts after fa
   save.action()
   await nextTurn()
   assert.equal(modal.closed, true)
-  assert.deepEqual(committed!.fields.find((field) => field.key === 'kanban_type')!.after, { present: true, value: 'Feature' })
   assert.deepEqual(committed!.fields.find((field) => field.key === 'tags')!.after, { present: true, value: ['release', 'project/demo'] })
   assert.deepEqual(committed!.fields.find((field) => field.key === 'kanban_assignees')!.after, { present: true, value: ['Alice', 'Bob'] })
 })
