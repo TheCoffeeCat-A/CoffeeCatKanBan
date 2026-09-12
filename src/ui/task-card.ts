@@ -38,10 +38,6 @@ export function renderTaskCard(container: HTMLElement, task: Task, board: Board,
   }
   if (task.priority) setIcon(metadata.createSpan({ cls: 'cckb-priority', attr: { 'aria-label': '高优先级', title: '高优先级' } }), 'flag')
   if (task.archived) metadata.createSpan({ text: '已归档' })
-  if (task.assignees.length) {
-    card.addClass('cckb-card-has-assignee')
-    card.createDiv({ cls: 'cckb-assignees', text: task.assignees.join(', ') })
-  }
   const footer = card.createDiv({ cls: 'cckb-card-tools' })
   const taskIndex = board.columns.findIndex((column) => column.id === task.column)
   const inProgress = task.column !== board.defaultColumn && task.column !== board.doneColumn
@@ -63,6 +59,7 @@ export function renderTaskCard(container: HTMLElement, task: Task, board: Board,
       }
     })
   }
+  if (task.assignees.length) footer.createDiv({ cls: 'cckb-assignees', text: task.assignees.join(', ') })
   iconButton(footer, 'file-text', '打开任务笔记', () => interaction.openNote(task.path))
   drag.bindSource(card, task)
   drag.bindTarget(card, task.column, task)
