@@ -790,8 +790,9 @@ test('search filters only result elements and non-manual sorts disable drag and 
 test('status buttons start default tasks and complete in-progress tasks', async () => {
   const { view, actions } = await actionView([{ ...taskFixture('owner', 'doing'), assignees: ['Owner'] }])
   const ownerCard = view.contentEl.descendants().find((element) => element.dataset.taskId === 'owner')!
-  assert.ok(ownerCard.className.split(' ').includes('cckb-card-has-assignee'))
-  assert.equal(ownerCard.descendants().find((element) => element.className === 'cckb-assignees')?.textContent, 'Owner')
+  const assignees = ownerCard.descendants().find((element) => element.className === 'cckb-assignees')!
+  assert.equal(assignees.textContent, 'Owner')
+  assert.equal(assignees.parent?.className, 'cckb-card-tools')
   const start = view.contentEl.descendants().find((element) => element.attributes.get('aria-label') === '\u5f00\u59cb: first')!
   start.listeners.get('click')!({})
   await nextTurn()

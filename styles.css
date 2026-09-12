@@ -450,14 +450,10 @@
 }
 
 .cckb-prototype .cckb-assignees {
-  width: 100%;
-  margin-top: auto;
-  padding-top: var(--size-4-2);
-  text-align: center;
-}
-
-.cckb-prototype .cckb-card-has-assignee .cckb-card-tools {
-  margin-top: 0;
+  flex: 0 1 40%;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
 }
 
 .cckb-prototype .cckb-add-task {
